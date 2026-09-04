@@ -1,7 +1,7 @@
 {
   "name": "rtf-otp-bot",
   "version": "1.0.0",
-  "description": "RTF OTP Bot - Telegram OTP Service with MongoDB",
+  "description": "RTF OTP Bot - Complete Telegram OTP Service",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
