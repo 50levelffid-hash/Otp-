@@ -1,6 +1,6 @@
 // ============================================
 // RTF OTP BOT - Complete Bot Code
-// Language: Hinglish (Hindi + English mix)
+// Language: Hinglish (Proper Indian Mix)
 // Database: MongoDB
 // Owner: @RTFGAMMING
 // ============================================
@@ -18,6 +18,7 @@ const BOT_NAME = 'RTF OTP BOT';
 const DEFAULT_LIMIT = 3;
 const ZELAPI_BASE_URL = 'https://smsku.zelapi.eu.cc';
 const MONGODB_URL = "mongodb+srv://sahajada07:Sahajada123@cluster0.vynn0ht.mongodb.net/?appName=Cluster0";
+const PORT = process.env.PORT || 3000;
 
 // ============================================
 // MONGODB CONNECTION
@@ -92,8 +93,8 @@ const bot = new Telegraf(TOKEN);
 // HELPER FUNCTIONS
 // ============================================
 
-// Hinglish Time Format
-function getHinglishTime(dateObj = new Date()) {
+// Indian Time Format (IST)
+function getIndianTime(dateObj = new Date()) {
   const options = {
     timeZone: 'Asia/Kolkata',
     year: 'numeric',
@@ -252,9 +253,8 @@ function startGlobalOtpLoop() {
 
         if (activeMap.has(cleanNum)) {
           const userNumObj = activeMap.get(cleanNum);
-          const formattedSmsTime = getHinglishTime(new Date(timestamp.replace(' ', 'T') + '+00:00'));
+          const formattedSmsTime = getIndianTime(new Date(timestamp.replace(' ', 'T') + '+00:00'));
           
-          // Check if OTP already exists
           const existingOtp = await OtpHistory.findOne({
             number: cleanNum,
             fullText: message,
@@ -328,7 +328,7 @@ function getMainMenuKeyboard(userId) {
       Markup.button.callback('📜 OTP History', 'menu_history_global')
     ],
     [
-      Markup.button.callback('📊 API Status', 'menu_stats'),
+      Markup.button.callback('📊 Server Status', 'menu_stats'),
       Markup.button.callback('👤 Mera Profile', 'menu_profile')
     ]
   ];
@@ -354,7 +354,7 @@ async function sendMainMenu(ctx) {
   const limitStr = limit === Infinity ? 'Unlimited' : `${limit} Number`;
   const savedCountStr = `${activeNums.length} / ${limitStr}`;
 
-  const text = `✨ <b>${BOT_NAME} MEIN WELCOME HAI</b> ✨\n━━━━━━━━━━━━━━━━━━━━\nNamaste <b>${ctx.from.first_name}</b> 👋\nOTP System ready hai use karne ke liye.\n\n📊 <b>ACCOUNT STATUS:</b>\n├ 🟢 <b>Server Status:</b> <code>Normal & Active</code>\n├ 📱 <b>Saved Numbers:</b> <code>${savedCountStr}</code>\n├ 📬 <b>Total OTP Received:</b> <code>${totalOtps} Messages</code>\n└ 🕒 <b>System Time:</b> <code>${getHinglishTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n👇 <i>Koi bhi option select karo neeche se:</i>\n\n📌 <b>Support:</b> @RTFGAMMING`;
+  const text = `✨ <b>${BOT_NAME} MEIN WELCOME HAI</b> ✨\n━━━━━━━━━━━━━━━━━━━━\nNamaste <b>${ctx.from.first_name}</b> 👋\nOTP System ready hai use karne ke liye.\n\n📊 <b>ACCOUNT STATUS:</b>\n├ 🟢 <b>Server Status:</b> <code>Normal & Active</code>\n├ 📱 <b>Saved Numbers:</b> <code>${savedCountStr}</code>\n├ 📬 <b>Total OTP Received:</b> <code>${totalOtps} Messages</code>\n└ 🕒 <b>System Time:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n👇 <i>Koi bhi option select karo neeche se:</i>\n\n📌 <b>Support:</b> @RTFGAMMING`;
   
   try {
     if (ctx.callbackQuery) {
@@ -371,7 +371,6 @@ async function sendMainMenu(ctx) {
 bot.start(async (ctx) => {
   const user = ctx.from;
   
-  // Check if user exists, if not create
   let existingUser = await User.findOne({ userId: user.id });
   if (!existingUser) {
     await User.create({
@@ -391,7 +390,7 @@ bot.start(async (ctx) => {
       { upsert: true }
     );
     
-    const text = `👋 <b>Namaste, ${user.first_name}!</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>${BOT_NAME}</b> mein aapka swagat hai.\n\nSecurity ke liye, please apna Telegram contact number verify karo.\n\n🕒 <code>${getHinglishTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n👇 <i>Neeche green button dabao contact share karne ke liye:</i>`;
+    const text = `👋 <b>Namaste, ${user.first_name}!</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>${BOT_NAME}</b> mein aapka swagat hai.\n\nSecurity ke liye, please apna Telegram contact number verify karo.\n\n🕒 <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n👇 <i>Neeche green button dabao contact share karne ke liye:</i>`;
     return ctx.reply(text, { parse_mode: 'HTML', ...getContactReplyKeyboard() });
   }
 
@@ -423,7 +422,7 @@ bot.on('contact', async (ctx) => {
     
     await Session.deleteOne({ userId: ctx.from.id });
 
-    await ctx.reply(`✅ <b>VERIFICATION SUCCESS!</b>\n━━━━━━━━━━━━━━━━━━━━\n📱 <b>Number:</b> <code>${formatPhone(contact.phone_number)}</code>\n🕒 <b>Time:</b> <code>${getHinglishTime()}</code>\n\nAb aap saare features use kar sakte ho.`, {
+    await ctx.reply(`✅ <b>VERIFICATION SUCCESS!</b>\n━━━━━━━━━━━━━━━━━━━━\n📱 <b>Number:</b> <code>${formatPhone(contact.phone_number)}</code>\n🕒 <b>Time:</b> <code>${getIndianTime()}</code>\n\nAb aap saare features use kar sakte ho.`, {
       parse_mode: 'HTML',
       ...Markup.removeKeyboard()
     });
@@ -452,7 +451,7 @@ bot.action('menu_manual_check', async (ctx) => {
     { upsert: true }
   );
 
-  const text = `🔍 <b>MANUAL OTP CHECK</b>\n━━━━━━━━━━━━━━━━━━━━\nJo number check karna hai wo send karo (example: <code>+919876543210</code>).\n\n⚙️ <i>System automatically 100 latest SMS scan karega aur dikhayega.</i>\n\n🕒 <code>${getHinglishTime()}</code>`;
+  const text = `🔍 <b>MANUAL OTP CHECK</b>\n━━━━━━━━━━━━━━━━━━━━\nJo number check karna hai wo send karo (example: <code>+919876543210</code>).\n\n⚙️ <i>System automatically 100 latest SMS scan karega aur dikhayega.</i>\n\n🕒 <code>${getIndianTime()}</code>`;
   const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Home', 'menu_main')]]);
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
@@ -494,7 +493,7 @@ bot.on('text', async (ctx, next) => {
     if (foundOtps.length > 0) {
       text += `📬 <b>Mile (${foundOtps.length}) SMS/OTP:</b>\n\n`;
       foundOtps.slice(0, 5).forEach((otp, idx) => {
-        const formattedTime = getHinglishTime(new Date(otp[3].replace(' ', 'T') + '+00:00'));
+        const formattedTime = getIndianTime(new Date(otp[3].replace(' ', 'T') + '+00:00'));
         text += `<b>${idx + 1}. ${otp[0]}</b> (<code>${formattedTime}</code>)\n└ 💬 <code>${otp[2]}</code>\n\n`;
       });
     } else {
@@ -508,7 +507,7 @@ bot.on('text', async (ctx, next) => {
       buttons.push([Markup.button.callback('➕ Save to My Numbers', `add_manual_${inputNum}_${detectedService}_${detectedCountry}`)]);
     }
 
-    text += `\n━━━━━━━━━━━━━━━━━━━━\n🕒 <code>${getHinglishTime()}</code>`;
+    text += `\n━━━━━━━━━━━━━━━━━━━━\n🕒 <code>${getIndianTime()}</code>`;
 
     buttons.push([
       Markup.button.callback('🔍 Check Another Number', 'menu_manual_check'),
@@ -574,7 +573,7 @@ bot.action(/^add_manual_([0-9]+)_(.+)_(.+)$/, async (ctx) => {
   
   await safeAnswerCb(ctx, 'Number save ho gaya!');
 
-  const text = `✅ <b>NUMBER SAVE HO GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n📱 <b>Virtual Number:</b> <code>${formatPhone(cleanNum)}</code>\n🔹 <b>Service:</b> <code>${serviceName}</code>\n🌍 <b>Country:</b> <code>${countryName}</code>\n\n🕒 <b>Time:</b> <code>${getHinglishTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n💡 <i>Ab system automatically SMS detect karega aur aapko bhejega.</i>`;
+  const text = `✅ <b>NUMBER SAVE HO GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n📱 <b>Virtual Number:</b> <code>${formatPhone(cleanNum)}</code>\n🔹 <b>Service:</b> <code>${serviceName}</code>\n🌍 <b>Country:</b> <code>${countryName}</code>\n\n🕒 <b>Time:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n💡 <i>Ab system automatically SMS detect karega aur aapko bhejega.</i>`;
 
   const keyboard = Markup.inlineKeyboard([
     [Markup.button.callback('📱 My Numbers', 'menu_my_numbers')],
@@ -594,7 +593,7 @@ bot.action('menu_profile', async (ctx) => {
   const limit = await getUserMaxLimit(ctx.from.id);
   const isOwner = (ctx.from.id === OWNER_ID);
 
-  const text = `👤 <b>USER PROFILE</b>\n━━━━━━━━━━━━━━━━━━━━\n🆔 <b>User ID:</b> <code>${ctx.from.id}</code>\n👤 <b>Name:</b> <code>${ctx.from.first_name}</code>\n🏷️ <b>Username:</b> @${ctx.from.username || '-'}\n📱 <b>Contact:</b> <code>${phone}</code>\n💎 <b>Status:</b> <code>${isOwner ? '👑 Owner' : 'User'}</code>\n🔒 <b>Number Limit:</b> <code>${limit === Infinity ? 'Unlimited' : limit + ' Numbers'}</code>\n\n🕒 <code>${getHinglishTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n<i>Data securely store hai MongoDB mein.</i>\n\n📌 <b>Support:</b> @RTFGAMMING`;
+  const text = `👤 <b>USER PROFILE</b>\n━━━━━━━━━━━━━━━━━━━━\n🆔 <b>User ID:</b> <code>${ctx.from.id}</code>\n👤 <b>Name:</b> <code>${ctx.from.first_name}</code>\n🏷️ <b>Username:</b> @${ctx.from.username || '-'}\n📱 <b>Contact:</b> <code>${phone}</code>\n💎 <b>Status:</b> <code>${isOwner ? '👑 Owner' : 'User'}</code>\n🔒 <b>Number Limit:</b> <code>${limit === Infinity ? 'Unlimited' : limit + ' Numbers'}</code>\n\n🕒 <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n<i>Data securely store hai MongoDB mein.</i>\n\n📌 <b>Support:</b> @RTFGAMMING`;
   
   const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Home', 'menu_main')]]);
 
@@ -609,7 +608,7 @@ bot.action('menu_services', async (ctx) => {
   const services = await ZelApiClient.getServices();
 
   if (!services || services.length === 0) {
-    return ctx.editMessageText(`❌ <b>Services Down Hain</b>\n━━━━━━━━━━━━━━━━━━━━\nAPI server se connect nahi ho pa raha. Thodi der baad try karo.\n\n🕒 <code>${getHinglishTime()}</code>`, Markup.inlineKeyboard([
+    return ctx.editMessageText(`❌ <b>Services Down Hain</b>\n━━━━━━━━━━━━━━━━━━━━\nAPI server se connect nahi ho pa raha. Thodi der baad try karo.\n\n🕒 <code>${getIndianTime()}</code>`, Markup.inlineKeyboard([
       [Markup.button.callback('🏠 Home', 'menu_main')]
     ]), { parse_mode: 'HTML' }).catch(() => {});
   }
@@ -636,7 +635,7 @@ bot.action(/^svc_(.+)$/, async (ctx) => {
   const countries = await ZelApiClient.getCountries(serviceName);
 
   if (!countries || countries.length === 0) {
-    return ctx.editMessageText(`❌ <b>Country Stock Khatam</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>${serviceName}</b> ke liye koi country available nahi hai.\n\n🕒 <code>${getHinglishTime()}</code>`, {
+    return ctx.editMessageText(`❌ <b>Country Stock Khatam</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>${serviceName}</b> ke liye koi country available nahi hai.\n\n🕒 <code>${getIndianTime()}</code>`, {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([[Markup.button.callback('🔙 Back to Services', 'menu_services')]])
     }).catch(() => {});
@@ -688,7 +687,7 @@ bot.action(/^req_(.+)_(.+)$/, async (ctx) => {
       { upsert: true }
     );
 
-    const text = `🎉 <b>NUMBER MIL GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n🔹 <b>Service:</b> <code>${serviceName}</code>\n🌍 <b>Country:</b> <code>${countryName}</code>\n📱 <b>Number:</b> <code>${formattedNum}</code>\n🆔 <b>Order ID:</b> <code>${reqId}</code>\n\n🕒 <b>Time:</b> <code>${getHinglishTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n💡 <b>Tip:</b> Ye number app mein daalo. System automatically OTP detect karega.`;
+    const text = `🎉 <b>NUMBER MIL GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n🔹 <b>Service:</b> <code>${serviceName}</code>\n🌍 <b>Country:</b> <code>${countryName}</code>\n📱 <b>Number:</b> <code>${formattedNum}</code>\n🆔 <b>Order ID:</b> <code>${reqId}</code>\n\n🕒 <b>Time:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n💡 <b>Tip:</b> Ye number app mein daalo. System automatically OTP detect karega.`;
     
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('⚡ Check OTP', `otp_${cleanNum}_${serviceName}_${countryName}`)],
@@ -708,7 +707,7 @@ bot.action(/^req_(.+)_(.+)$/, async (ctx) => {
     return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
   } else {
     const errorMsg = (res && res.error) ? res.error : 'Stock khatam ho gaya ya server down hai.';
-    const text = `❌ <b>NUMBER NAHI MILA!</b>\n━━━━━━━━━━━━━━━━━━━━\n🔹 <b>Service:</b> <code>${serviceName}</code>\n🌍 <b>Country:</b> <code>${countryName}</code>\n⚠️ <b>Reason:</b> ${errorMsg}\n\n🕒 <code>${getHinglishTime()}</code>`;
+    const text = `❌ <b>NUMBER NAHI MILA!</b>\n━━━━━━━━━━━━━━━━━━━━\n🔹 <b>Service:</b> <code>${serviceName}</code>\n🌍 <b>Country:</b> <code>${countryName}</code>\n⚠️ <b>Reason:</b> ${errorMsg}\n\n🕒 <code>${getIndianTime()}</code>`;
     
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('🔙 Try Other Country', `svc_${serviceName}`)],
@@ -748,7 +747,7 @@ bot.action(/^change_(.+)_(.+)_(.+)$/, async (ctx) => {
       { upsert: true }
     );
 
-    const text = `🔄 <b>NUMBER CHANGE HO GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n🔹 <b>Service:</b> <code>${serviceName}</code>\n🌍 <b>Country:</b> <code>${countryName}</code>\n📱 <b>Naya Number:</b> <code>${formattedNum}</code>\n🗑️ <b>Purana Number:</b> <code>${formatPhone(oldCleanNum)}</code>\n🆔 <b>Order ID:</b> <code>${reqId}</code>\n\n🕒 <b>Time:</b> <code>${getHinglishTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n💡 <i>Naya number active ho gaya hai. SMS auto-track hoga.</i>`;
+    const text = `🔄 <b>NUMBER CHANGE HO GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n🔹 <b>Service:</b> <code>${serviceName}</code>\n🌍 <b>Country:</b> <code>${countryName}</code>\n📱 <b>Naya Number:</b> <code>${formattedNum}</code>\n🗑️ <b>Purana Number:</b> <code>${formatPhone(oldCleanNum)}</code>\n🆔 <b>Order ID:</b> <code>${reqId}</code>\n\n🕒 <b>Time:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n💡 <i>Naya number active ho gaya hai. SMS auto-track hoga.</i>`;
     
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('⚡ Check OTP', `otp_${newCleanNum}_${serviceName}_${countryName}`)],
@@ -768,7 +767,7 @@ bot.action(/^change_(.+)_(.+)_(.+)$/, async (ctx) => {
     return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
   } else {
     const errorMsg = (res && res.error) ? res.error : 'Stock khatam.';
-    const text = `⚠️ <b>DHYAAN DO!</b>\n━━━━━━━━━━━━━━━━━━━━\nPurana number <code>${formatPhone(oldCleanNum)}</code> release ho gaya, par naya number nahi mila.\n\n⚠️ <b>Reason:</b> ${errorMsg}\n🕒 <code>${getHinglishTime()}</code>`;
+    const text = `⚠️ <b>DHYAAN DO!</b>\n━━━━━━━━━━━━━━━━━━━━\nPurana number <code>${formatPhone(oldCleanNum)}</code> release ho gaya, par naya number nahi mila.\n\n⚠️ <b>Reason:</b> ${errorMsg}\n🕒 <code>${getIndianTime()}</code>`;
     
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('🌐 Buy New Number', 'menu_services')],
@@ -801,7 +800,7 @@ bot.action(/^otp_([^_]+)(?:_(.+)_(.+))?$/, async (ctx) => {
   if (otpFound) {
     const msg = otpFound[2];
     const timestamp = otpFound[3];
-    const formattedSmsTime = getHinglishTime(new Date(timestamp.replace(' ', 'T') + '+00:00'));
+    const formattedSmsTime = getIndianTime(new Date(timestamp.replace(' ', 'T') + '+00:00'));
     const matchOtp = msg.match(/\b\d{3}[-\s]?\d{3,4}\b|\b\d{4,8}\b/);
     const extractedCode = matchOtp ? matchOtp[0] : 'DEKHO SMS';
 
@@ -822,9 +821,9 @@ bot.action(/^otp_([^_]+)(?:_(.+)_(.+))?$/, async (ctx) => {
       });
     }
 
-    text = `📬 <b>OTP MIL GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n📱 <b>Number:</b> <code>${formatPhone(cleanNum)}</code>\n🔑 <b>OTP Code:</b> <code>${extractedCode}</code>\n\n💬 <b>Message:</b>\n<blockquote>${msg}</blockquote>\n\n🕒 <b>SMS Time:</b> <code>${formattedSmsTime}</code>\n🕒 <b>Check Time:</b> <code>${getHinglishTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n<i>OTP history mein save ho gaya.</i>`;
+    text = `📬 <b>OTP MIL GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n📱 <b>Number:</b> <code>${formatPhone(cleanNum)}</code>\n🔑 <b>OTP Code:</b> <code>${extractedCode}</code>\n\n💬 <b>Message:</b>\n<blockquote>${msg}</blockquote>\n\n🕒 <b>SMS Time:</b> <code>${formattedSmsTime}</code>\n🕒 <b>Check Time:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n<i>OTP history mein save ho gaya.</i>`;
   } else {
-    text = `⏳ <b>SMS KA INTJAAR...</b>\n━━━━━━━━━━━━━━━━━━━━\n📱 <b>Number:</b> <code>${formatPhone(cleanNum)}</code>\n📌 <b>Status:</b> Abhi tak koi naya SMS nahi aaya.\n\n🕒 <b>Last Check:</b> <code>${getHinglishTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n💡 <i>Refresh karo agar OTP resend kiya hai.</i>`;
+    text = `⏳ <b>SMS KA INTJAAR...</b>\n━━━━━━━━━━━━━━━━━━━━\n📱 <b>Number:</b> <code>${formatPhone(cleanNum)}</code>\n📌 <b>Status:</b> Abhi tak koi naya SMS nahi aaya.\n\n🕒 <b>Last Check:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n💡 <i>Refresh karo agar OTP resend kiya hai.</i>`;
   }
 
   const changeBtnData = (serviceName !== 'Unknown' && countryName !== 'Unknown')
@@ -866,7 +865,7 @@ bot.action(/^rel_([^_]+)(?:_(.+))?$/, async (ctx) => {
     { status: 'released' }
   );
 
-  const text = `🗑️ <b>NUMBER RELEASE HO GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n📱 <b>Number:</b> <code>${formatPhone(cleanNum)}</code>\n🔹 <b>Service:</b> <code>${serviceName}</code>\n\n🕒 <b>Time:</b> <code>${getHinglishTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n<i>Number wapas pool mein chala gaya. Ab tracking band ho gayi.</i>`;
+  const text = `🗑️ <b>NUMBER RELEASE HO GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n📱 <b>Number:</b> <code>${formatPhone(cleanNum)}</code>\n🔹 <b>Service:</b> <code>${serviceName}</code>\n\n🕒 <b>Time:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n<i>Number wapas pool mein chala gaya. Ab tracking band ho gayi.</i>`;
   
   const keyboard = Markup.inlineKeyboard([
     [Markup.button.callback('📱 My Active Numbers', 'menu_my_numbers')],
@@ -885,7 +884,7 @@ bot.action('menu_my_numbers', async (ctx) => {
   const activeDbNumbers = await ActiveNumber.find({ userId: ctx.from.id, status: 'active' });
 
   if (!activeDbNumbers || activeDbNumbers.length === 0) {
-    const text = `📭 <b>KOI NUMBER NAHI HAI</b>\n━━━━━━━━━━━━━━━━━━━━\nAbhi tak aapne koi number save nahi kiya.\n\n🕒 <code>${getHinglishTime()}</code>`;
+    const text = `📭 <b>KOI NUMBER NAHI HAI</b>\n━━━━━━━━━━━━━━━━━━━━\nAbhi tak aapne koi number save nahi kiya.\n\n🕒 <code>${getIndianTime()}</code>`;
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('🌐 Buy / Lease Number', 'menu_services')],
       [Markup.button.callback('🏠 Home', 'menu_main')]
@@ -896,7 +895,7 @@ bot.action('menu_my_numbers', async (ctx) => {
   const limit = await getUserMaxLimit(ctx.from.id);
   const limitStr = limit === Infinity ? 'Unlimited' : `${limit} Slot`;
 
-  const text = `📱 <b>MERE NUMBERS (${activeDbNumbers.length} / ${limitStr})</b>\n━━━━━━━━━━━━━━━━━━━━\nKisi bhi number pe click karo details dekhne ke liye:\n\n🕒 <code>${getHinglishTime()}</code>`;
+  const text = `📱 <b>MERE NUMBERS (${activeDbNumbers.length} / ${limitStr})</b>\n━━━━━━━━━━━━━━━━━━━━\nKisi bhi number pe click karo details dekhne ke liye:\n\n🕒 <code>${getIndianTime()}</code>`;
   
   const buttons = activeDbNumbers.map(item => [
     Markup.button.callback(`📱 ${formatPhone(item.number)} ── [${item.service}]`, `otp_${item.number}_${item.service}_${item.country}`)
@@ -923,7 +922,7 @@ bot.action(/^menu_history_global(?:_(\d+))?$/, async (ctx) => {
   const sliceHistory = history.slice((page - 1) * perPage, page * perPage);
 
   if (!history || history.length === 0) {
-    const text = `📜 <b>OTP HISTORY KHALI HAI</b>\n━━━━━━━━━━━━━━━━━━━━\nAbhi tak koi OTP receive nahi hua.\n\n🕒 <code>${getHinglishTime()}</code>`;
+    const text = `📜 <b>OTP HISTORY KHALI HAI</b>\n━━━━━━━━━━━━━━━━━━━━\nAbhi tak koi OTP receive nahi hua.\n\n🕒 <code>${getIndianTime()}</code>`;
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('📱 My Numbers', 'menu_my_numbers')],
       [Markup.button.callback('🏠 Home', 'menu_main')]
@@ -936,7 +935,7 @@ bot.action(/^menu_history_global(?:_(\d+))?$/, async (ctx) => {
     const actualIndex = ((page - 1) * perPage) + index + 1;
     text += `<b>${actualIndex}. ${item.service}</b> ── <code>${formatPhone(item.number)}</code>\n├ 🔑 <b>OTP:</b> <code>${item.otpCode}</code>\n├ 💬 <code>${item.fullText}</code>\n└ 🕒 <code>${item.smsTimestamp || item.createdAt}</code>\n\n`;
   });
-  text += `━━━━━━━━━━━━━━━━━━━━\n🕒 <code>${getHinglishTime()}</code>`;
+  text += `━━━━━━━━━━━━━━━━━━━━\n🕒 <code>${getIndianTime()}</code>`;
 
   const buttons = [];
   const navRow = [];
@@ -963,7 +962,7 @@ bot.action(/^history_num_([0-9]+)(?:_(\d+))?$/, async (ctx) => {
   const sliceHistory = history.slice((page - 1) * perPage, page * perPage);
 
   if (!history || history.length === 0) {
-    const text = `📜 <b>NO OTP HISTORY FOR: <code>${formatPhone(cleanNum)}</code></b>\n━━━━━━━━━━━━━━━━━━━━\nIs number pe abhi tak koi OTP nahi aaya.\n\n🕒 <code>${getHinglishTime()}</code>`;
+    const text = `📜 <b>NO OTP HISTORY FOR: <code>${formatPhone(cleanNum)}</code></b>\n━━━━━━━━━━━━━━━━━━━━\nIs number pe abhi tak koi OTP nahi aaya.\n\n🕒 <code>${getIndianTime()}</code>`;
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('🔙 Back to Numbers', 'menu_my_numbers')],
       [Markup.button.callback('🏠 Home', 'menu_main')]
@@ -976,7 +975,7 @@ bot.action(/^history_num_([0-9]+)(?:_(\d+))?$/, async (ctx) => {
     const actualIndex = ((page - 1) * perPage) + index + 1;
     text += `<b>${actualIndex}. ${item.service}</b>\n├ 🔑 <b>OTP:</b> <code>${item.otpCode}</code>\n├ 💬 <code>${item.fullText}</code>\n└ 🕒 <code>${item.smsTimestamp || item.createdAt}</code>\n\n`;
   });
-  text += `━━━━━━━━━━━━━━━━━━━━\n🕒 <code>${getHinglishTime()}</code>`;
+  text += `━━━━━━━━━━━━━━━━━━━━\n🕒 <code>${getIndianTime()}</code>`;
 
   const buttons = [];
   const navRow = [];
@@ -991,7 +990,7 @@ bot.action(/^history_num_([0-9]+)(?:_(\d+))?$/, async (ctx) => {
 });
 
 // ============================================
-// ACTION: menu_stats
+// ACTION: menu_stats - FIXED VERSION
 // ============================================
 bot.action('menu_stats', async (ctx) => {
   await safeAnswerCb(ctx, 'Stats load ho rahe hain...');
@@ -999,9 +998,9 @@ bot.action('menu_stats', async (ctx) => {
 
   let text = '';
   if (stats) {
-    text = `📊 <b>SERVER STATISTICS</b>\n━━━━━━━━━━━━━━━━━━━━\n📩 <b>Total OTP Success:</b> <code>${stats.otp_count || 0}</code>\n🌍 <b>Countries Available:</b> <code>${stats.countries_count || 0}</code>\n🌐 <b>Active Services:</b> <code>${stats.services_count || 0}</code>\n📱 <b>Total Stock:</b> <code>${stats.available_numbers || 0}</code>\n\n🕒 <b>Updated:</b> <code>${getHinglishTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n<i>Data directly ZELAPI server se aa raha hai.</i>`;
+    text = `📊 <b>SERVER STATUS & STATISTICS</b>\n━━━━━━━━━━━━━━━━━━━━\n📩 <b>Total Successful OTP:</b> <code>${stats.otp_count || 0}</code>\n🌍 <b>Available Countries:</b> <code>${stats.countries_count || 0}</code>\n🌐 <b>Active Services:</b> <code>${stats.services_count || 0}</code>\n📱 <b>Total Stock Available:</b> <code>${stats.available_numbers || 0}</code>\n\n🕒 <b>Updated:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n<i>Data directly ZELAPI server se aa raha hai.</i>`;
   } else {
-    text = `❌ <b>STATS LOAD NAHI HO PAYE</b>\n━━━━━━━━━━━━━━━━━━━━\nServer response nahi de raha.\n\n🕒 <code>${getHinglishTime()}</code>`;
+    text = `❌ <b>STATS LOAD NAHI HO PAYE</b>\n━━━━━━━━━━━━━━━━━━━━\nServer response nahi de raha.\n\n🕒 <code>${getIndianTime()}</code>`;
   }
 
   const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Home', 'menu_main')]]);
@@ -1118,6 +1117,20 @@ bot.action(/^owner_set_limit_(\d+)$/, async (ctx) => {
 });
 
 // ============================================
+// ADD PORT SUPPORT FOR RENDER
+// ============================================
+const express = require('express');
+const app = express();
+
+app.get('/', (req, res) => {
+  res.send(`${BOT_NAME} is running! 🤖`);
+});
+
+app.listen(PORT, () => {
+  console.log(`🌐 Web server running on port ${PORT}`);
+});
+
+// ============================================
 // ERROR HANDLER
 // ============================================
 bot.catch((err, ctx) => {
@@ -1131,6 +1144,7 @@ bot.launch().then(() => {
   console.log(`✅ ${BOT_NAME} is running!`);
   console.log(`👑 Owner ID: ${OWNER_ID}`);
   console.log(`📌 Support: @RTFGAMMING`);
+  console.log(`🌐 Web: http://localhost:${PORT}`);
 });
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
