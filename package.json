@@ -1,17 +1,17 @@
 {
   "name": "rtf-otp-bot",
   "version": "1.0.0",
-  "description": "RTF OTP Bot - Telegram OTP Service",
-  "main": "bot.js",
+  "description": "RTF OTP Bot - Telegram OTP Service with MongoDB",
+  "main": "index.js",
   "scripts": {
-    "start": "node bot.js"
+    "start": "node index.js"
   },
   "engines": {
     "node": "20.x"
   },
   "dependencies": {
     "axios": "^1.6.0",
-    "better-sqlite3": "9.6.0",
+    "mongoose": "^8.0.0",
     "dotenv": "^16.3.1",
     "telegraf": "^4.15.0"
   }
