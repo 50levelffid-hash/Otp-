@@ -468,7 +468,7 @@ bot.use(async (ctx, next) => {
 });
 
 // ============================================
-// ACTION: check_channels
+// ACTION : check_channels
 // ============================================
 bot.action('check_channels', async (ctx) => {
   const channelCheck = await checkChannelMembership(ctx.from.id);
