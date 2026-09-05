@@ -2,7 +2,7 @@
 // RTF OTP BOT - Complete Bot Code
 // Language: Hinglish (Proper Indian Mix)
 // Database: MongoDB
-// Owner: @RTFGAMMING 
+// Owner: @RTFGAMMING
 // ============================================
 
 const { Telegraf, Markup } = require('telegraf');
@@ -113,13 +113,16 @@ const UserSchema = new mongoose.Schema({
   userId: { type: Number, unique: true, required: true },
   username: { type: String, default: null },
   firstName: { type: String, required: true },
+  phoneNumber: { type: String, default: null },
   isSuspended: { type: Number, default: 0 },
   credits: { type: Number, default: 3 },
   referrals: { type: Number, default: 0 },
   referredBy: { type: Number, default: null },
+  customLimit: { type: Number, default: null },
   unlimitedAccess: { type: Number, default: 0 },
   unlimitedExpiry: { type: Date, default: null },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  lastOtpUse: { type: Date, default: null }
 });
 
 // Session Schema
@@ -137,7 +140,6 @@ const ActiveNumberSchema = new mongoose.Schema({
   country: { type: String, required: true },
   countryCode: { type: String, required: true },
   status: { type: String, default: 'active' },
-  isWhatsApp: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -160,15 +162,6 @@ const QRCodeSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-// Used Numbers Schema
-const UsedNumberSchema = new mongoose.Schema({
-  number: { type: String, unique: true, required: true },
-  userId: { type: Number, required: true },
-  service: { type: String, required: true },
-  country: { type: String, required: true },
-  usedAt: { type: Date, default: Date.now }
-});
-
 // Traffic Stats Schema
 const TrafficStatsSchema = new mongoose.Schema({
   countryCode: { type: String, unique: true, required: true },
@@ -184,7 +177,6 @@ const Session = mongoose.model('Session', SessionSchema);
 const ActiveNumber = mongoose.model('ActiveNumber', ActiveNumberSchema);
 const OtpHistory = mongoose.model('OtpHistory', OtpHistorySchema);
 const QRCode = mongoose.model('QRCode', QRCodeSchema);
-const UsedNumber = mongoose.model('UsedNumber', UsedNumberSchema);
 const TrafficStats = mongoose.model('TrafficStats', TrafficStatsSchema);
 
 // ============================================
@@ -242,6 +234,10 @@ async function getUserMaxLimit(userId) {
   const user = await User.findOne({ userId });
   if (!user) return DEFAULT_LIMIT;
   
+  if (user.customLimit !== null && user.customLimit !== undefined) {
+    return user.customLimit;
+  }
+  
   if (user.unlimitedAccess === 1 && user.unlimitedExpiry && new Date() < user.unlimitedExpiry) {
     return Infinity;
   }
@@ -281,6 +277,12 @@ function getChannelsKeyboard() {
   buttons.push([Markup.button.callback('✅ Check Again', 'check_channels')]);
   buttons.push([Markup.button.callback('🏠 Home', 'menu_main')]);
   return Markup.inlineKeyboard(buttons);
+}
+
+function getContactReplyKeyboard() {
+  return Markup.keyboard([
+    [Markup.button.contactRequest('📲 Telegram Contact Verify Karo')]
+  ]).resize().oneTime();
 }
 
 // ============================================
@@ -335,22 +337,18 @@ class ZelApiClient {
 }
 
 // ============================================
-// CHECK IF NUMBER IS USED
+// CHECK IF NUMBER IS USED (Based on 2000 OTP History)
 // ============================================
 async function isNumberUsed(number) {
   const cleanNum = cleanNumber(number);
   
-  // Check in Used Numbers database
-  const used = await UsedNumber.findOne({ number: cleanNum });
-  if (used) return true;
+  // Check in OTP History (latest 2000 records)
+  const inHistory = await OtpHistory.findOne({ number: cleanNum });
+  if (inHistory) return true;
   
   // Check in Active Numbers
   const active = await ActiveNumber.findOne({ number: cleanNum, status: 'active' });
   if (active) return true;
-  
-  // Check in OTP History (latest 2000)
-  const inHistory = await OtpHistory.findOne({ number: cleanNum });
-  if (inHistory) return true;
   
   return false;
 }
@@ -367,12 +365,12 @@ async function getFreshNumber(service, country, userId) {
     
     const res = await ZelApiClient.requestNumber(service, country);
     if (!res || !res.success || !res.number) {
-      return { success: false, error: res?.error || 'No number available from API' };
+      return { success: false, error: 'No number available from API' };
     }
     
     const cleanNum = cleanNumber(res.number);
     
-    // Check if number is already used
+    // Check if number is already used (based on 2000 OTP history)
     const used = await isNumberUsed(cleanNum);
     if (used) {
       await ZelApiClient.releaseNumber(cleanNum);
@@ -448,7 +446,7 @@ async function updateTrafficStats(countryCode) {
 }
 
 // ============================================
-// GET TRAFFIC STATS
+// GET TRAFFIC STATS (Based on 2000 OTPs)
 // ============================================
 async function getTrafficStats() {
   try {
@@ -471,7 +469,7 @@ async function getTrafficStats() {
 }
 
 // ============================================
-// GLOBAL OTP LOOP
+// GLOBAL OTP LOOP - Saves all OTPs to Database
 // ============================================
 function startGlobalOtpLoop() {
   setInterval(async () => {
@@ -479,6 +477,28 @@ function startGlobalOtpLoop() {
       const feed = await ZelApiClient.getPublicOtpFeed(100);
       if (!Array.isArray(feed)) return;
 
+      // Save all OTPs to database (not just active ones)
+      for (const item of feed) {
+        if (!Array.isArray(item) || item.length < 4) continue;
+        const [service, rawNum, message, timestamp, country] = item;
+        const cleanNum = cleanNumber(rawNum);
+        const formattedSmsTime = getIndianTime(new Date(timestamp.replace(' ', 'T') + '+00:00'));
+        
+        const matchOtp = message.match(/\b\d{3}[-\s]?\d{3,4}\b|\b\d{4,8}\b/);
+        const extractedCode = matchOtp ? matchOtp[0] : 'DEKHO SMS';
+
+        // Save to OTP History (latest 2000)
+        await saveOtpToHistory(
+          cleanNum,
+          service,
+          country || 'TG',
+          extractedCode,
+          message,
+          formattedSmsTime
+        );
+      }
+
+      // Check for active numbers and send notifications
       const activeNumbers = await ActiveNumber.find({ status: 'active' });
       if (!activeNumbers || activeNumbers.length === 0) return;
 
@@ -496,16 +516,6 @@ function startGlobalOtpLoop() {
           
           const matchOtp = message.match(/\b\d{3}[-\s]?\d{3,4}\b|\b\d{4,8}\b/);
           const extractedCode = matchOtp ? matchOtp[0] : 'DEKHO SMS';
-
-          // Save to OTP History (latest 2000)
-          await saveOtpToHistory(
-            cleanNum,
-            service,
-            country || userNumObj.countryCode || 'TG',
-            extractedCode,
-            message,
-            formattedSmsTime
-          );
 
           // Send notification to user
           const countryName = getFullCountryName(country || userNumObj.countryCode || 'TG');
@@ -694,6 +704,42 @@ bot.start(async (ctx) => {
 
   await Session.deleteOne({ userId: user.id });
   return sendMainMenu(ctx);
+});
+
+// ============================================
+// CONTACT HANDLER
+// ============================================
+bot.on('contact', async (ctx) => {
+  const session = await Session.findOne({ userId: ctx.from.id });
+  const contact = ctx.message.contact;
+
+  if (session && session.state === 'WAITING_CONTACT') {
+    if (contact.user_id !== ctx.from.id) {
+      return ctx.reply('⚠️ <b>VERIFICATION FAIL!</b>\nJo contact share kiya hai wo aapka nahi hai. Green button use karo.', {
+        parse_mode: 'HTML',
+        ...getContactReplyKeyboard()
+      });
+    }
+
+    await User.findOneAndUpdate(
+      { userId: ctx.from.id },
+      { 
+        phoneNumber: contact.phone_number,
+        username: ctx.from.username || null,
+        firstName: ctx.from.first_name
+      },
+      { upsert: true }
+    );
+    
+    await Session.deleteOne({ userId: ctx.from.id });
+
+    await ctx.reply(`✅ <b>VERIFICATION SUCCESS!</b>\n━━━━━━━━━━━━━━━━━━━━\n📱 <b>Number:</b> <code>${formatPhone(contact.phone_number)}</code>\n🕒 <b>Time:</b> <code>${getIndianTime()}</code>\n\nAb aap saare features use kar sakte ho.`, {
+      parse_mode: 'HTML',
+      ...Markup.removeKeyboard()
+    });
+
+    return sendMainMenu(ctx);
+  }
 });
 
 // ============================================
@@ -956,6 +1002,7 @@ bot.action(/^add_manual_([0-9]+)_(.+)_(.+)$/, async (ctx) => {
 bot.action('menu_profile', async (ctx) => {
   await safeAnswerCb(ctx, 'Profile load ho raha hai...');
   const dbUser = await User.findOne({ userId: ctx.from.id });
+  const phone = (dbUser && dbUser.phoneNumber) ? formatPhone(dbUser.phoneNumber) : 'Not Verified';
   const limit = await getUserMaxLimit(ctx.from.id);
   const isOwner = (ctx.from.id === OWNER_ID);
   const credits = dbUser ? dbUser.credits : 0;
@@ -968,7 +1015,7 @@ bot.action('menu_profile', async (ctx) => {
     unlimitedText = `✅ (Till ${getIndianTime(expiry)})`;
   }
 
-  const text = `👤 <b>USER PROFILE</b>\n━━━━━━━━━━━━━━━━━━━━\n🆔 <b>User ID:</b> <code>${ctx.from.id}</code>\n👤 <b>Name:</b> <code>${ctx.from.first_name}</code>\n🏷️ <b>Username:</b> @${ctx.from.username || '-'}\n💎 <b>Status:</b> <code>${isOwner ? '👑 Owner' : 'User'}</code>\n🔒 <b>Number Limit:</b> <code>${limit === Infinity ? 'Unlimited (24 hrs)' : limit + ' Numbers'}</code>\n💰 <b>Credits:</b> <code>${credits}</code>\n🌟 <b>Total Referrals:</b> <code>${referrals}</code>\n⏳ <b>Unlimited Active:</b> <code>${unlimitedText}</code>\n\n🕒 <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n<i>Data securely store hai MongoDB mein.</i>\n\n📌 <b>Support:</b> @RTFGAMMING`;
+  const text = `👤 <b>USER PROFILE</b>\n━━━━━━━━━━━━━━━━━━━━\n🆔 <b>User ID:</b> <code>${ctx.from.id}</code>\n👤 <b>Name:</b> <code>${ctx.from.first_name}</code>\n🏷️ <b>Username:</b> @${ctx.from.username || '-'}\n📱 <b>Contact:</b> <code>${phone}</code>\n💎 <b>Status:</b> <code>${isOwner ? '👑 Owner' : 'User'}</code>\n🔒 <b>Number Limit:</b> <code>${limit === Infinity ? 'Unlimited (24 hrs)' : limit + ' Numbers'}</code>\n💰 <b>Credits:</b> <code>${credits}</code>\n🌟 <b>Total Referrals:</b> <code>${referrals}</code>\n⏳ <b>Unlimited Active:</b> <code>${unlimitedText}</code>\n\n🕒 <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n<i>Data securely store hai MongoDB mein.</i>\n\n📌 <b>Support:</b> @RTFGAMMING`;
   
   const keyboard = Markup.inlineKeyboard([
     [Markup.button.callback('🔙 Home', 'menu_main')]
@@ -1074,7 +1121,7 @@ bot.action(/^req_(.+)_(.+)$/, async (ctx) => {
 
   await safeAnswerCb(ctx, 'Number book ho raha hai...');
   
-  // Get fresh number (not used before)
+  // Get fresh number (not used before - checks 2000 OTP history)
   const res = await getFreshNumber(serviceName, countryCode, userId);
 
   if (res && res.success) {
@@ -1091,21 +1138,13 @@ bot.action(/^req_(.+)_(.+)$/, async (ctx) => {
       );
     }
     
-    // Save to Used Numbers
-    await UsedNumber.create({
-      number: cleanNum,
-      userId: userId,
-      service: serviceName,
-      country: countryName
-    });
-    
     await ActiveNumber.findOneAndUpdate(
       { number: cleanNum },
       { userId, number: cleanNum, service: serviceName, country: countryName, countryCode: countryCode, status: 'active' },
       { upsert: true }
     );
 
-    const text = `🎉 <b>NUMBER MIL GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n🔹 <b>Service:</b> <code>${serviceName}</code>\n🌍 <b>Country:</b> ${flag} <code>${countryName}</code>\n📱 <b>Number:</b> <code>${formattedNum}</code>\n🆔 <b>Order ID:</b> <code>${reqId}</code>\n✅ <b>Status:</b> <code>Fresh Number (Not Used)</code>\n\n🕒 <b>Time:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n💡 <b>Tip:</b> Ye number app mein daalo. System automatically OTP detect karega.`;
+    const text = `🎉 <b>NUMBER MIL GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n🔹 <b>Service:</b> <code>${serviceName}</code>\n🌍 <b>Country:</b> ${flag} <code>${countryName}</code>\n📱 <b>Number:</b> <code>${formattedNum}</code>\n🆔 <b>Order ID:</b> <code>${reqId}</code>\n✅ <b>Status:</b> <code>Fresh Number</code>\n\n🕒 <b>Time:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n💡 <b>Tip:</b> Ye number app mein daalo. System automatically OTP detect karega.`;
     
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('⚡ Check OTP', `otp_${cleanNum}_${serviceName}_${countryCode}`)],
@@ -1161,21 +1200,13 @@ bot.action(/^change_(.+)_(.+)_(.+)$/, async (ctx) => {
     const formattedNum = formatPhone(newCleanNum);
     const reqId = res.id || '-';
 
-    // Save to Used Numbers
-    await UsedNumber.create({
-      number: newCleanNum,
-      userId: ctx.from.id,
-      service: serviceName,
-      country: countryName
-    });
-
     await ActiveNumber.findOneAndUpdate(
       { number: newCleanNum },
       { userId: ctx.from.id, number: newCleanNum, service: serviceName, country: countryName, countryCode: countryCode, status: 'active' },
       { upsert: true }
     );
 
-    const text = `🔄 <b>NUMBER CHANGE HO GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n🔹 <b>Service:</b> <code>${serviceName}</code>\n🌍 <b>Country:</b> ${flag} <code>${countryName}</code>\n📱 <b>Naya Number:</b> <code>${formattedNum}</code>\n🗑️ <b>Purana Number:</b> <code>${formatPhone(oldCleanNum)}</code>\n🆔 <b>Order ID:</b> <code>${reqId}</code>\n✅ <b>Status:</b> <code>Fresh Number (Not Used)</code>\n\n🕒 <b>Time:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n💡 <i>Naya number active ho gaya hai. SMS auto-track hoga.</i>`;
+    const text = `🔄 <b>NUMBER CHANGE HO GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n🔹 <b>Service:</b> <code>${serviceName}</code>\n🌍 <b>Country:</b> ${flag} <code>${countryName}</code>\n📱 <b>Naya Number:</b> <code>${formattedNum}</code>\n🗑️ <b>Purana Number:</b> <code>${formatPhone(oldCleanNum)}</code>\n🆔 <b>Order ID:</b> <code>${reqId}</code>\n✅ <b>Status:</b> <code>Fresh Number</code>\n\n🕒 <b>Time:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n💡 <i>Naya number active ho gaya hai. SMS auto-track hoga.</i>`;
     
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('⚡ Check OTP', `otp_${newCleanNum}_${serviceName}_${countryCode}`)],
@@ -1419,7 +1450,7 @@ bot.action('menu_stats', async (ctx) => {
 
   let text = '';
   if (stats) {
-    text = `📊 <b>SERVER STATUS & STATISTICS</b>\n━━━━━━━━━━━━━━━━━━━━\n📩 <b>Total Successful OTP:</b> <code>${stats.otp_count || 0}</code>\n🌍 <b>Available Countries:</b> <code>${stats.countries_count || 0}</code>\n🌐 <b>Active Services:</b> <code>${stats.services_count || 0}</code>\n📱 <b>Total Stock Available:</b> <code>${stats.available_numbers || 0}</code>\n\n🕒 <b>Updated:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n<i>Data directly ZELAPI server se aa raha hai.</i>`;
+    text = `📊 <b>SERVER STATUS & STATISTICS</b>\n━━━━━━━━━━━━━━━━━━━━\n📩 <b>Total Successful OTP:</b> <code>${stats.otp_count || 0}</code>\n🌍 <b>Available Countries:</b> <code>${stats.countries_count || 0}</code>\n🌐 <b>Active Services:</b> <code>${stats.services_count || 0}</code>\n📱 <b>Total Stock Available:</b> <code>${stats.available_numbers || 0}</code>\n\n🕒 <b>Updated:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n<i>System status updated successfully.</i>`;
   } else {
     text = `❌ <b>STATS LOAD NAHI HO PAYE</b>\n━━━━━━━━━━━━━━━━━━━━\nServer response nahi de raha.\n\n🕒 <code>${getIndianTime()}</code>`;
   }
@@ -1429,14 +1460,14 @@ bot.action('menu_stats', async (ctx) => {
 });
 
 // ============================================
-// ACTION: menu_traffic - New Feature
+// ACTION: menu_traffic
 // ============================================
 bot.action('menu_traffic', async (ctx) => {
   await safeAnswerCb(ctx, 'Traffic stats load ho rahe hain...');
   
   const topCountries = await getTrafficStats();
   
-  let text = `📈 <b>TOP OTP TRAFFIC COUNTRIES</b>\n━━━━━━━━━━━━━━━━━━━━\n<i>Real-time OTP traffic analysis from ZelAPI</i>\n\n`;
+  let text = `📈 <b>TOP OTP TRAFFIC COUNTRIES</b>\n━━━━━━━━━━━━━━━━━━━━\n<i>Real-time OTP traffic analysis based on latest 2000 records</i>\n\n`;
   
   if (topCountries.length === 0) {
     text += `📭 <i>Abhi tak koi traffic data nahi hai.</i>\n\n`;
@@ -1784,10 +1815,9 @@ bot.action('owner_stats', async (ctx) => {
   const totalActiveUsers = await User.countDocuments({ isSuspended: 0 });
   const totalBannedUsers = await User.countDocuments({ isSuspended: 1 });
   const totalCredits = await User.aggregate([{ $group: { _id: null, total: { $sum: '$credits' } } }]);
-  const totalUsedNumbers = await UsedNumber.countDocuments();
   const trafficStats = await TrafficStats.countDocuments();
 
-  const text = `📊 <b>BOT STATISTICS</b>\n━━━━━━━━━━━━━━━━━━━━\n👥 <b>Total Users:</b> <code>${totalUsers}</code>\n🟢 <b>Active Users:</b> <code>${totalActiveUsers}</code>\n🔴 <b>Banned Users:</b> <code>${totalBannedUsers}</code>\n📱 <b>Active Numbers:</b> <code>${totalActiveNumbers}</code>\n📬 <b>Total OTPs in DB:</b> <code>${totalOtps} / ${MAX_SAVED_OTPS}</code>\n💰 <b>Total Credits:</b> <code>${totalCredits[0]?.total || 0}</code>\n📌 <b>Used Numbers Tracked:</b> <code>${totalUsedNumbers}</code>\n📈 <b>Traffic Countries:</b> <code>${trafficStats}</code>\n\n🕒 <b>Updated:</b> <code>${getIndianTime()}</code>`;
+  const text = `📊 <b>BOT STATISTICS</b>\n━━━━━━━━━━━━━━━━━━━━\n👥 <b>Total Users:</b> <code>${totalUsers}</code>\n🟢 <b>Active Users:</b> <code>${totalActiveUsers}</code>\n🔴 <b>Banned Users:</b> <code>${totalBannedUsers}</code>\n📱 <b>Active Numbers:</b> <code>${totalActiveNumbers}</code>\n📬 <b>Total OTPs in DB:</b> <code>${totalOtps} / ${MAX_SAVED_OTPS}</code>\n💰 <b>Total Credits:</b> <code>${totalCredits[0]?.total || 0}</code>\n📈 <b>Traffic Countries:</b> <code>${trafficStats}</code>\n\n🕒 <b>Updated:</b> <code>${getIndianTime()}</code>`;
 
   const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'menu_owner')]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
@@ -1909,7 +1939,6 @@ bot.action('owner_broadcast', async (ctx) => {
 // ============================================
 // TEXT HANDLERS FOR OWNER ACTIONS
 // ============================================
-// Add credits handler
 bot.on('text', async (ctx, next) => {
   const session = await Session.findOne({ userId: ctx.from.id });
   if (!session) return next();
