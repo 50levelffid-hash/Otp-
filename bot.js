@@ -2,7 +2,7 @@
 // RTF OTP BOT - Complete Bot Code
 // Language: Hinglish (Proper Indian Mix)
 // Database: MongoDB
-// Owner: @RTFGAMMING
+// Owner: @RTFGAMMING 
 // ============================================
 
 const { Telegraf, Markup } = require('telegraf');
