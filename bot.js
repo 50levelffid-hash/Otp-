@@ -1,4 +1,4 @@
-// ==========================================
+// ============================================
 // RTF OTP BOT - Complete Bot Code
 // Language: Hinglish (Proper Indian Mix)
 // Database: MongoDB
@@ -115,14 +115,16 @@ const UserSchema = new mongoose.Schema({
   firstName: { type: String, required: true },
   phoneNumber: { type: String, default: null },
   isSuspended: { type: Number, default: 0 },
-  credits: { type: Number, default: 3 },
+  credits: { type: Number, default: 1 },
   referrals: { type: Number, default: 0 },
   referredBy: { type: Number, default: null },
   customLimit: { type: Number, default: null },
   unlimitedAccess: { type: Number, default: 0 },
   unlimitedExpiry: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
-  lastOtpUse: { type: Date, default: null }
+  lastOtpUse: { type: Date, default: null },
+  coinsReceived: { type: Number, default: 0 },
+  pendingCoins: { type: Number, default: 0 }
 });
 
 // Session Schema
@@ -143,7 +145,7 @@ const ActiveNumberSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-// OTP History Schema - Only stores latest 2000
+// OTP History Schema
 const OtpHistorySchema = new mongoose.Schema({
   number: { type: String, required: true },
   service: { type: String, required: true },
@@ -169,6 +171,24 @@ const TrafficStatsSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+// Channel Settings Schema
+const ChannelSettingsSchema = new mongoose.Schema({
+  id: { type: String, unique: true, required: true },
+  channelUrl: { type: String, required: true },
+  channelName: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now }
+});
+
+// OTP Forwarder Settings Schema
+const OtpForwarderSchema = new mongoose.Schema({
+  id: { type: String, unique: true, required: true },
+  chatId: { type: String, required: true },
+  chatType: { type: String, required: true }, // 'channel' or 'group'
+  isActive: { type: Number, default: 1 },
+  botLink: { type: String, default: '' },
+  createdAt: { type: Date, default: Date.now }
+});
+
 // ============================================
 // MODELS
 // ============================================
@@ -178,6 +198,8 @@ const ActiveNumber = mongoose.model('ActiveNumber', ActiveNumberSchema);
 const OtpHistory = mongoose.model('OtpHistory', OtpHistorySchema);
 const QRCode = mongoose.model('QRCode', QRCodeSchema);
 const TrafficStats = mongoose.model('TrafficStats', TrafficStatsSchema);
+const ChannelSettings = mongoose.model('ChannelSettings', ChannelSettingsSchema);
+const OtpForwarder = mongoose.model('OtpForwarder', OtpForwarderSchema);
 
 // ============================================
 // TELEGRAM BOT INIT
@@ -251,39 +273,72 @@ async function safeAnswerCb(ctx, text = '', options = {}) {
   } catch (err) {}
 }
 
+// ============================================
+// CHANNEL CHECK FUNCTIONS
+// ============================================
 async function checkChannelMembership(userId) {
-  try {
-    for (const channel of REQUIRED_CHANNELS) {
-      try {
-        const chatMember = await bot.telegram.getChatMember(channel.id, userId);
-        const status = chatMember.status;
-        if (status === 'left' || status === 'kicked') {
-          return { success: false, channel: channel.url };
-        }
-      } catch (error) {
-        continue;
+  const missingChannels = [];
+  
+  for (const channel of REQUIRED_CHANNELS) {
+    try {
+      const chatMember = await bot.telegram.getChatMember(channel.id, userId);
+      const status = chatMember.status;
+      if (status === 'left' || status === 'kicked') {
+        missingChannels.push(channel);
       }
+    } catch (error) {
+      missingChannels.push(channel);
     }
-    return { success: true };
-  } catch (error) {
-    return { success: false, channel: 'unknown' };
   }
+  
+  return missingChannels;
 }
 
-function getChannelsKeyboard() {
-  const buttons = REQUIRED_CHANNELS.map(channel => [
+function getMissingChannelsKeyboard(missingChannels) {
+  const buttons = missingChannels.map(channel => [
     Markup.button.url(`📢 ${channel.id}`, channel.url)
   ]);
-  buttons.push([Markup.button.callback('✅ Check Again', 'check_channels')]);
+  buttons.push([Markup.button.callback('✅ I Joined', 'check_channels_joined')]);
   buttons.push([Markup.button.callback('🏠 Home', 'menu_main')]);
   return Markup.inlineKeyboard(buttons);
 }
 
-function getContactReplyKeyboard() {
-  return Markup.keyboard([
-    [Markup.button.contactRequest('📲 Telegram Contact Verify Karo')]
-  ]).resize().oneTime();
-}
+// ============================================
+// CHECK CHANNELS JOINED
+// ============================================
+bot.action('check_channels_joined', async (ctx) => {
+  const missingChannels = await checkChannelMembership(ctx.from.id);
+  
+  if (missingChannels.length === 0) {
+    await safeAnswerCb(ctx, '✅ Saare channels join ho gaye!');
+    await ctx.deleteMessage();
+    
+    // Check if user has pending coins from referral
+    const user = await User.findOne({ userId: ctx.from.id });
+    if (user && user.pendingCoins > 0) {
+      await User.findOneAndUpdate(
+        { userId: ctx.from.id },
+        { 
+          $inc: { credits: user.pendingCoins, coinsReceived: user.pendingCoins },
+          $set: { pendingCoins: 0 }
+        }
+      );
+      
+      await ctx.reply(`🎉 <b>Coins Mil Gaye!</b>\n━━━━━━━━━━━━━━━━━━━━\nAapko <b>${user.pendingCoins}</b> coin mil gaye hain!\n\nTotal Credits: <code>${user.credits + user.pendingCoins}</code>`, {
+        parse_mode: 'HTML'
+      });
+    }
+    
+    return sendMainMenu(ctx);
+  } else {
+    await safeAnswerCb(ctx, '❌ Kuch channels abhi bhi pending hain!', { show_alert: true });
+    const text = `⚠️ <b>CHANNEL JOIN KARO!</b>\n━━━━━━━━━━━━━━━━━━━━\nBot use karne ke liye neeche diye gaye channels ko join karna zaroori hai.\n\n📌 <b>Missing Channels:</b>`;
+    return ctx.editMessageText(text, {
+      parse_mode: 'HTML',
+      ...getMissingChannelsKeyboard(missingChannels)
+    });
+  }
+});
 
 // ============================================
 // ZELAPI CLIENT
@@ -337,16 +392,14 @@ class ZelApiClient {
 }
 
 // ============================================
-// CHECK IF NUMBER IS USED (Based on 2000 OTP History)
+// CHECK IF NUMBER IS USED
 // ============================================
 async function isNumberUsed(number) {
   const cleanNum = cleanNumber(number);
   
-  // Check in OTP History (latest 2000 records)
   const inHistory = await OtpHistory.findOne({ number: cleanNum });
   if (inHistory) return true;
   
-  // Check in Active Numbers
   const active = await ActiveNumber.findOne({ number: cleanNum, status: 'active' });
   if (active) return true;
   
@@ -370,7 +423,6 @@ async function getFreshNumber(service, country, userId) {
     
     const cleanNum = cleanNumber(res.number);
     
-    // Check if number is already used (based on 2000 OTP history)
     const used = await isNumberUsed(cleanNum);
     if (used) {
       await ZelApiClient.releaseNumber(cleanNum);
@@ -384,13 +436,12 @@ async function getFreshNumber(service, country, userId) {
 }
 
 // ============================================
-// SAVE OTP TO HISTORY (Latest 2000 only)
+// SAVE OTP TO HISTORY
 // ============================================
 async function saveOtpToHistory(number, service, countryCode, otpCode, fullText, smsTimestamp) {
   try {
     const cleanNum = cleanNumber(number);
     
-    // Check if OTP already exists
     const existing = await OtpHistory.findOne({
       number: cleanNum,
       fullText: fullText,
@@ -399,7 +450,6 @@ async function saveOtpToHistory(number, service, countryCode, otpCode, fullText,
     
     if (existing) return;
     
-    // Save new OTP
     await OtpHistory.create({
       number: cleanNum,
       service: service,
@@ -409,7 +459,6 @@ async function saveOtpToHistory(number, service, countryCode, otpCode, fullText,
       smsTimestamp: smsTimestamp
     });
     
-    // Keep only latest 2000 records
     const totalCount = await OtpHistory.countDocuments();
     if (totalCount > MAX_SAVED_OTPS) {
       const toDelete = totalCount - MAX_SAVED_OTPS;
@@ -422,7 +471,6 @@ async function saveOtpToHistory(number, service, countryCode, otpCode, fullText,
       }
     }
     
-    // Update traffic stats
     await updateTrafficStats(countryCode);
     
   } catch (error) {
@@ -446,7 +494,7 @@ async function updateTrafficStats(countryCode) {
 }
 
 // ============================================
-// GET TRAFFIC STATS (Based on 2000 OTPs)
+// GET TRAFFIC STATS
 // ============================================
 async function getTrafficStats() {
   try {
@@ -461,7 +509,7 @@ async function getTrafficStats() {
       percentage: total > 0 ? ((s.count / total) * 100).toFixed(1) : 0
     }));
     
-    return result.slice(0, 3); // Top 3 countries
+    return result.slice(0, 3);
   } catch (error) {
     console.error('Error getting traffic stats:', error);
     return [];
@@ -469,7 +517,40 @@ async function getTrafficStats() {
 }
 
 // ============================================
-// GLOBAL OTP LOOP - Saves all OTPs to Database
+// SEND OTP TO FORWARDER
+// ============================================
+async function sendOtpToForwarder(service, number, otpCode, message, country, countryCode) {
+  try {
+    const forwarders = await OtpForwarder.find({ isActive: 1 });
+    if (forwarders.length === 0) return;
+    
+    const countryName = getFullCountryName(countryCode || country || 'TG');
+    const flag = getFlagEmoji(countryCode || country || 'TG');
+    const formattedNumber = formatPhone(number);
+    
+    const text = `📬 <b>NEW OTP RECEIVED!</b>\n━━━━━━━━━━━━━━━━━━━━\n🔹 <b>Service:</b> <code>${service}</code>\n🌍 <b>Country:</b> ${flag} <code>${countryName}</code>\n📱 <b>Number:</b> <code>${formattedNumber}</code>\n\n🔑 <b>OTP CODE:</b> <code>${otpCode}</code>\n\n💬 <b>Message:</b>\n<blockquote>${message}</blockquote>\n\n🕒 <b>Time:</b> <code>${getIndianTime()}</code>`;
+    
+    for (const forwarder of forwarders) {
+      try {
+        const keyboard = Markup.inlineKeyboard([
+          [Markup.button.url('🤖 Bot', forwarder.botLink || 'https://t.me/RTFOTPBOT')]
+        ]);
+        
+        await bot.telegram.sendMessage(forwarder.chatId, text, {
+          parse_mode: 'HTML',
+          ...keyboard
+        });
+      } catch (error) {
+        console.error('Error sending to forwarder:', error);
+      }
+    }
+  } catch (error) {
+    console.error('Error in sendOtpToForwarder:', error);
+  }
+}
+
+// ============================================
+// GLOBAL OTP LOOP
 // ============================================
 function startGlobalOtpLoop() {
   setInterval(async () => {
@@ -477,7 +558,6 @@ function startGlobalOtpLoop() {
       const feed = await ZelApiClient.getPublicOtpFeed(100);
       if (!Array.isArray(feed)) return;
 
-      // Save all OTPs to database (not just active ones)
       for (const item of feed) {
         if (!Array.isArray(item) || item.length < 4) continue;
         const [service, rawNum, message, timestamp, country] = item;
@@ -487,7 +567,6 @@ function startGlobalOtpLoop() {
         const matchOtp = message.match(/\b\d{3}[-\s]?\d{3,4}\b|\b\d{4,8}\b/);
         const extractedCode = matchOtp ? matchOtp[0] : 'DEKHO SMS';
 
-        // Save to OTP History (latest 2000)
         await saveOtpToHistory(
           cleanNum,
           service,
@@ -496,9 +575,11 @@ function startGlobalOtpLoop() {
           message,
           formattedSmsTime
         );
+        
+        // Send to forwarders
+        await sendOtpToForwarder(service, cleanNum, extractedCode, message, country, country || 'TG');
       }
 
-      // Check for active numbers and send notifications
       const activeNumbers = await ActiveNumber.find({ status: 'active' });
       if (!activeNumbers || activeNumbers.length === 0) return;
 
@@ -517,7 +598,6 @@ function startGlobalOtpLoop() {
           const matchOtp = message.match(/\b\d{3}[-\s]?\d{3,4}\b|\b\d{4,8}\b/);
           const extractedCode = matchOtp ? matchOtp[0] : 'DEKHO SMS';
 
-          // Send notification to user
           const countryName = getFullCountryName(country || userNumObj.countryCode || 'TG');
           const flag = getFlagEmoji(country || userNumObj.countryCode || 'TG');
 
@@ -540,11 +620,10 @@ function startGlobalOtpLoop() {
 
           bot.telegram.sendMessage(userNumObj.userId, text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
           
-          // Deduct credit from user (only if not unlimited)
           const user = await User.findOne({ userId: userNumObj.userId });
           const hasUnlimited = user && user.unlimitedAccess === 1 && user.unlimitedExpiry && new Date() < user.unlimitedExpiry;
           
-          if (!hasUnlimited && user) {
+          if (!hasUnlimited && user && user.credits > 0) {
             await User.findOneAndUpdate(
               { userId: userNumObj.userId },
               { $inc: { credits: -1 } }
@@ -570,35 +649,16 @@ bot.use(async (ctx, next) => {
       return ctx.reply('🚫 <b>ACCESS BLOCK HO GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\nAapka account temporarily suspend kar diya gaya hai Owner ne.\n\nOwner se contact karo: @RTFGAMMING', { parse_mode: 'HTML' });
     }
 
-    const channelCheck = await checkChannelMembership(ctx.from.id);
-    if (!channelCheck.success) {
-      const text = `⚠️ <b>CHANNEL JOIN KARO!</b>\n━━━━━━━━━━━━━━━━━━━━\nBot use karne ke liye neeche diye gaye channels ko join karna zaroori hai.\n\n📌 <b>Channels:</b>`;
+    const missingChannels = await checkChannelMembership(ctx.from.id);
+    if (missingChannels.length > 0) {
+      const text = `⚠️ <b>CHANNEL JOIN KARO!</b>\n━━━━━━━━━━━━━━━━━━━━\nBot use karne ke liye neeche diye gaye channels ko join karna zaroori hai.\n\n📌 <b>Missing Channels:</b>`;
       return ctx.reply(text, {
         parse_mode: 'HTML',
-        ...getChannelsKeyboard()
+        ...getMissingChannelsKeyboard(missingChannels)
       });
     }
   }
   return next();
-});
-
-// ============================================
-// ACTION: check_channels
-// ============================================
-bot.action('check_channels', async (ctx) => {
-  const channelCheck = await checkChannelMembership(ctx.from.id);
-  if (channelCheck.success) {
-    await safeAnswerCb(ctx, '✅ Saare channels join ho gaye!');
-    await ctx.deleteMessage();
-    return sendMainMenu(ctx);
-  } else {
-    await safeAnswerCb(ctx, '❌ Kuch channels abhi bhi pending hain!', { show_alert: true });
-    const text = `⚠️ <b>CHANNEL JOIN KARO!</b>\n━━━━━━━━━━━━━━━━━━━━\nBot use karne ke liye neeche diye gaye channels ko join karna zaroori hai.\n\n📌 <b>Channels:</b>`;
-    return ctx.editMessageText(text, {
-      parse_mode: 'HTML',
-      ...getChannelsKeyboard()
-    });
-  }
 });
 
 // ============================================
@@ -669,11 +729,15 @@ bot.start(async (ctx) => {
       userId: user.id,
       username: user.username || null,
       firstName: user.first_name,
-      credits: 3,
+      credits: 1,
       referredBy: referrerId
     });
 
-    if (referrerId && referrerId !== user.id) {
+    // Check if user has joined channels
+    const missingChannels = await checkChannelMembership(user.id);
+    
+    if (missingChannels.length === 0 && referrerId && referrerId !== user.id) {
+      // User has joined all channels, give referral coin
       const referrer = await User.findOne({ userId: referrerId });
       if (referrer) {
         await User.findOneAndUpdate(
@@ -685,20 +749,26 @@ bot.start(async (ctx) => {
         const referrerName = referrerUser ? (referrerUser.first_name || referrerUser.username || 'Unknown') : 'Unknown';
         const newUserName = user.first_name || user.username || 'Unknown';
         
-        const notificationText = `📌 <b>New Referral Success!</b>\n━━━━━━━━━━━━━━━━━━━━\n👤 <b>Referrer:</b> ${referrerName}\n👤 <b>New User:</b> ${newUserName}\n🆔 <b>Referrer ID:</b> <code>${referrerId}</code>\n🆔 <b>New User ID:</b> <code>${user.id}</code>\n⭐ <b>Credits Earned:</b> <code>1</code>\n\n📊 <b>Referrer Total Credits:</b> <code>${referrer.credits + 1}</code>\n📌 <b>Referrer Total Referrals:</b> <code>${referrer.referrals + 1}</code>`;
+        const notificationText = `📌 <b>New Referral Success!</b>\n━━━━━━━━━━━━━━━━━━━━\n👤 <b>Referrer:</b> ${referrerName}\n👤 <b>New User:</b> ${newUserName}\n🆔 <b>Referrer ID:</b> <code>${referrerId}</code>\n🆔 <b>New User ID:</b> <code>${user.id}</code>\n⭐ <b>Coins Earned:</b> <code>1</code>\n\n📊 <b>Referrer Total Credits:</b> <code>${referrer.credits + 1}</code>\n📌 <b>Referrer Total Referrals:</b> <code>${referrer.referrals + 1}</code>`;
         
         bot.telegram.sendMessage(OWNER_ID, notificationText, { parse_mode: 'HTML' }).catch(() => {});
-        bot.telegram.sendMessage(referrerId, '🎁 <b>Referral Credit Added!</b>\n━━━━━━━━━━━━━━━━━━━━\nAapke referral se ek naya user aaya hai!\n⭐ <b>+1 Credit</b>\n\nTotal Credits: <code>' + (referrer.credits + 1) + '</code>', { parse_mode: 'HTML' }).catch(() => {});
+        bot.telegram.sendMessage(referrerId, '🎁 <b>Referral Coin Added!</b>\n━━━━━━━━━━━━━━━━━━━━\nAapke referral se ek naya user aaya hai!\n⭐ <b>+1 Coin</b>\n\nTotal Credits: <code>' + (referrer.credits + 1) + '</code>', { parse_mode: 'HTML' }).catch(() => {});
       }
+    } else if (missingChannels.length > 0 && referrerId && referrerId !== user.id) {
+      // User hasn't joined channels yet, save coin as pending
+      await User.findOneAndUpdate(
+        { userId: user.id },
+        { pendingCoins: 1 }
+      );
     }
   }
 
-  const channelCheck = await checkChannelMembership(user.id);
-  if (!channelCheck.success) {
-    const text = `⚠️ <b>CHANNEL JOIN KARO!</b>\n━━━━━━━━━━━━━━━━━━━━\nBot use karne ke liye neeche diye gaye channels ko join karna zaroori hai.\n\n📌 <b>Channels:</b>`;
+  const missingChannels = await checkChannelMembership(user.id);
+  if (missingChannels.length > 0) {
+    const text = `⚠️ <b>CHANNEL JOIN KARO!</b>\n━━━━━━━━━━━━━━━━━━━━\nBot use karne ke liye neeche diye gaye channels ko join karna zaroori hai.\n\n📌 <b>Missing Channels:</b>`;
     return ctx.reply(text, {
       parse_mode: 'HTML',
-      ...getChannelsKeyboard()
+      ...getMissingChannelsKeyboard(missingChannels)
     });
   }
 
@@ -741,6 +811,12 @@ bot.on('contact', async (ctx) => {
     return sendMainMenu(ctx);
   }
 });
+
+function getContactReplyKeyboard() {
+  return Markup.keyboard([
+    [Markup.button.contactRequest('📲 Telegram Contact Verify Karo')]
+  ]).resize().oneTime();
+}
 
 // ============================================
 // ACTION: menu_main
@@ -795,7 +871,7 @@ bot.on('text', async (ctx, next) => {
     }
 
     const user = await User.findOne({ userId: ctx.from.id });
-    if (user) {
+    if (user && user.credits > 0) {
       await User.findOneAndUpdate(
         { userId: ctx.from.id },
         { $inc: { credits: -1 } }
@@ -945,6 +1021,95 @@ bot.on('text', async (ctx, next) => {
     await Session.deleteOne({ userId: ctx.from.id });
 
     return ctx.reply(`📢 <b>Broadcast Complete!</b>\n━━━━━━━━━━━━━━━━━━━━\n✅ <b>Sent:</b> <code>${success}</code> users\n❌ <b>Failed:</b> <code>${failed}</code> users\n📌 <b>Total:</b> <code>${users.length}</code> users\n\nMessage sent to all active users.`, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+    });
+  }
+
+  // Channel Management - Add Channel
+  if (session.state === 'WAITING_ADD_CHANNEL') {
+    const channelUrl = ctx.message.text.trim();
+    const channelId = channelUrl.split('/').pop();
+    
+    await ChannelSettings.findOneAndUpdate(
+      { id: channelId },
+      { 
+        id: channelId,
+        channelUrl: channelUrl,
+        channelName: channelId
+      },
+      { upsert: true }
+    );
+    await Session.deleteOne({ userId: ctx.from.id });
+    
+    // Update REQUIRED_CHANNELS
+    const channel = await ChannelSettings.findOne({ id: channelId });
+    if (channel) {
+      REQUIRED_CHANNELS.push({
+        id: channel.id,
+        url: channel.channelUrl
+      });
+    }
+    
+    return ctx.reply(`✅ <b>Channel Added Successfully!</b>\n━━━━━━━━━━━━━━━━━━━━\nChannel: ${channelUrl}\n\nNow users will need to join this channel too.`, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+    });
+  }
+
+  // Channel Management - Remove Channel
+  if (session.state === 'WAITING_REMOVE_CHANNEL') {
+    const channelId = ctx.message.text.trim().replace('@', '');
+    
+    await ChannelSettings.deleteOne({ id: channelId });
+    await Session.deleteOne({ userId: ctx.from.id });
+    
+    // Remove from REQUIRED_CHANNELS
+    const index = REQUIRED_CHANNELS.findIndex(c => c.id === channelId);
+    if (index !== -1) {
+      REQUIRED_CHANNELS.splice(index, 1);
+    }
+    
+    return ctx.reply(`✅ <b>Channel Removed Successfully!</b>\n━━━━━━━━━━━━━━━━━━━━\nChannel: @${channelId}\n\nUsers no longer need to join this channel.`, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+    });
+  }
+
+  // OTP Forwarder - Add
+  if (session.state === 'WAITING_ADD_FORWARDER') {
+    const chatId = ctx.message.text.trim();
+    
+    await OtpForwarder.findOneAndUpdate(
+      { id: chatId },
+      { 
+        id: chatId,
+        chatId: chatId,
+        chatType: chatId.startsWith('-100') ? 'channel' : 'group',
+        isActive: 1
+      },
+      { upsert: true }
+    );
+    await Session.deleteOne({ userId: ctx.from.id });
+    
+    return ctx.reply(`✅ <b>OTP Forwarder Added!</b>\n━━━━━━━━━━━━━━━━━━━━\nChat ID: ${chatId}\n\nAll OTPs will be forwarded here.`, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+    });
+  }
+
+  // OTP Forwarder - Bot Link
+  if (session.state === 'WAITING_FORWARDER_BOT_LINK') {
+    const botLink = ctx.message.text.trim();
+    const forwarderId = session.data;
+    
+    await OtpForwarder.findOneAndUpdate(
+      { id: forwarderId },
+      { botLink: botLink }
+    );
+    await Session.deleteOne({ userId: ctx.from.id });
+    
+    return ctx.reply(`✅ <b>Bot Link Updated!</b>\n━━━━━━━━━━━━━━━━━━━━\nBot Link: ${botLink}`, {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
     });
@@ -1121,7 +1286,6 @@ bot.action(/^req_(.+)_(.+)$/, async (ctx) => {
 
   await safeAnswerCb(ctx, 'Number book ho raha hai...');
   
-  // Get fresh number (not used before - checks 2000 OTP history)
   const res = await getFreshNumber(serviceName, countryCode, userId);
 
   if (res && res.success) {
@@ -1130,7 +1294,6 @@ bot.action(/^req_(.+)_(.+)$/, async (ctx) => {
     const formattedNum = formatPhone(cleanNum);
     const reqId = res.id || '-';
     
-    // Deduct credit if not unlimited
     if (!hasUnlimited) {
       await User.findOneAndUpdate(
         { userId },
@@ -1265,7 +1428,6 @@ bot.action(/^otp_([^_]+)(?:_(.+)_(.+))?$/, async (ctx) => {
     const matchOtp = msg.match(/\b\d{3}[-\s]?\d{3,4}\b|\b\d{4,8}\b/);
     const extractedCode = matchOtp ? matchOtp[0] : 'DEKHO SMS';
 
-    // Save to OTP History
     await saveOtpToHistory(cleanNum, serviceName, countryCode, extractedCode, msg, formattedSmsTime);
 
     text = `📬 <b>OTP MIL GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n📱 <b>Number:</b> <code>${formatPhone(cleanNum)}</code>\n🔑 <b>OTP Code:</b> <code>${extractedCode}</code>\n\n💬 <b>Message:</b>\n<blockquote>${msg}</blockquote>\n\n🕒 <b>SMS Time:</b> <code>${formattedSmsTime}</code>\n🕒 <b>Check Time:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n<i>OTP history mein save ho gaya.</i>`;
@@ -1500,7 +1662,7 @@ bot.action('menu_refer', async (ctx) => {
   const referrals = user ? user.referrals : 0;
   const botUsername = ctx.botInfo.username;
 
-  const text = `🎁 <b>REFER & EARN</b>\n━━━━━━━━━━━━━━━━━━━━\nHar referral pe aapko <b>1 Credit</b> milega!\n\n📊 <b>Your Stats:</b>\n├ 💰 <b>Total Credits:</b> <code>${credits}</code>\n└ 🌟 <b>Total Referrals:</b> <code>${referrals}</code>\n\n🔗 <b>Your Referral Link:</b>\n<code>https://t.me/${botUsername}?start=${ctx.from.id}</code>\n\n📌 <b>How it works:</b>\n1. Share your referral link\n2. New user joins and starts bot\n3. You get <b>1 Credit</b> automatically!\n4. Credits can be used for OTP checks\n\n━━━━━━━━━━━━━━━━━━━━\n🕒 <code>${getIndianTime()}</code>`;
+  const text = `🎁 <b>REFER & EARN</b>\n━━━━━━━━━━━━━━━━━━━━\nHar referral pe aapko <b>1 Coin</b> milega!\n\n📊 <b>Your Stats:</b>\n├ 💰 <b>Total Credits:</b> <code>${credits}</code>\n└ 🌟 <b>Total Referrals:</b> <code>${referrals}</code>\n\n🔗 <b>Your Referral Link:</b>\n<code>https://t.me/${botUsername}?start=${ctx.from.id}</code>\n\n📌 <b>How it works:</b>\n1. Share your referral link\n2. New user joins and starts bot\n3. User must join all channels\n4. You get <b>1 Coin</b> automatically!\n5. Coins can be used for OTP checks\n\n━━━━━━━━━━━━━━━━━━━━\n🕒 <code>${getIndianTime()}</code>`;
 
   const keyboard = Markup.inlineKeyboard([
     [Markup.button.switchToChat('📤 Share Referral Link', `https://t.me/${botUsername}?start=${ctx.from.id}`)],
@@ -1563,9 +1725,219 @@ bot.action('menu_owner', async (ctx) => {
     [Markup.button.callback('📤 Export User Data', 'owner_export_data')],
     [Markup.button.callback('📱 Manage QR Code', 'owner_manage_qr')],
     [Markup.button.callback('📢 Broadcast Message', 'owner_broadcast')],
+    [Markup.button.callback('📢 Manage Channels', 'owner_manage_channels')],
+    [Markup.button.callback('📢 OTP Forwarder', 'owner_otp_forwarder')],
     [Markup.button.callback('🏠 Home', 'menu_main')]
   ]);
 
+  return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+});
+
+// ============================================
+// OWNER: Manage Channels
+// ============================================
+bot.action('owner_manage_channels', async (ctx) => {
+  if (ctx.from.id !== OWNER_ID) return;
+  await safeAnswerCb(ctx);
+
+  let text = `📢 <b>MANAGE CHANNELS</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Current Required Channels:</b>\n`;
+  
+  REQUIRED_CHANNELS.forEach((channel, index) => {
+    text += `${index + 1}. ${channel.id}\n`;
+  });
+  
+  text += `\n📌 <b>Options:</b>`;
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('➕ Add Channel', 'owner_add_channel')],
+    [Markup.button.callback('➖ Remove Channel', 'owner_remove_channel')],
+    [Markup.button.callback('🔙 Back to Owner Panel', 'menu_owner')]
+  ]);
+
+  return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+});
+
+// ============================================
+// OWNER: Add Channel
+// ============================================
+bot.action('owner_add_channel', async (ctx) => {
+  if (ctx.from.id !== OWNER_ID) return;
+  await safeAnswerCb(ctx);
+  
+  await Session.findOneAndUpdate(
+    { userId: ctx.from.id },
+    { userId: ctx.from.id, state: 'WAITING_ADD_CHANNEL', data: '' },
+    { upsert: true }
+  );
+
+  const text = `➕ <b>ADD CHANNEL</b>\n━━━━━━━━━━━━━━━━━━━━\nSend the channel URL or username:\n\n📌 <b>Examples:</b>\n<code>https://t.me/RTFGAMINGHACK0</code>\n<code>@RTFGAMINGHACK0</code>\n\n<i>Users will need to join this channel to use the bot.</i>`;
+
+  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Cancel', 'owner_manage_channels')]]);
+  return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+});
+
+// ============================================
+// OWNER: Remove Channel
+// ============================================
+bot.action('owner_remove_channel', async (ctx) => {
+  if (ctx.from.id !== OWNER_ID) return;
+  await safeAnswerCb(ctx);
+  
+  await Session.findOneAndUpdate(
+    { userId: ctx.from.id },
+    { userId: ctx.from.id, state: 'WAITING_REMOVE_CHANNEL', data: '' },
+    { upsert: true }
+  );
+
+  let text = `➖ <b>REMOVE CHANNEL</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Current Channels:</b>\n`;
+  
+  REQUIRED_CHANNELS.forEach((channel, index) => {
+    text += `${index + 1}. ${channel.id}\n`;
+  });
+  
+  text += `\nSend the channel username to remove (without @):\n\n📌 <b>Example:</b>\n<code>RTFGAMINGHACK0</code>`;
+
+  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Cancel', 'owner_manage_channels')]]);
+  return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+});
+
+// ============================================
+// OWNER: OTP Forwarder
+// ============================================
+bot.action('owner_otp_forwarder', async (ctx) => {
+  if (ctx.from.id !== OWNER_ID) return;
+  await safeAnswerCb(ctx);
+
+  const forwarders = await OtpForwarder.find({ isActive: 1 });
+  
+  let text = `📢 <b>OTP FORWARDER</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Active Forwarders:</b>\n`;
+  
+  if (forwarders.length === 0) {
+    text += `❌ <i>No active forwarders</i>\n`;
+  } else {
+    forwarders.forEach((f, index) => {
+      text += `${index + 1}. ${f.chatId} (${f.chatType})\n`;
+      text += `   🤖 Bot: ${f.botLink || 'Not set'}\n`;
+    });
+  }
+  
+  text += `\n📌 <b>Options:</b>`;
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('➕ Add Forwarder', 'owner_add_forwarder')],
+    [Markup.button.callback('🤖 Set Bot Link', 'owner_set_forwarder_bot')],
+    [Markup.button.callback('🔴 Remove Forwarder', 'owner_remove_forwarder')],
+    [Markup.button.callback('🔙 Back to Owner Panel', 'menu_owner')]
+  ]);
+
+  return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+});
+
+// ============================================
+// OWNER: Add Forwarder
+// ============================================
+bot.action('owner_add_forwarder', async (ctx) => {
+  if (ctx.from.id !== OWNER_ID) return;
+  await safeAnswerCb(ctx);
+  
+  await Session.findOneAndUpdate(
+    { userId: ctx.from.id },
+    { userId: ctx.from.id, state: 'WAITING_ADD_FORWARDER', data: '' },
+    { upsert: true }
+  );
+
+  const text = `➕ <b>ADD OTP FORWARDER</b>\n━━━━━━━━━━━━━━━━━━━━\nSend the Channel/Group ID:\n\n📌 <b>How to get ID:</b>\n1. Add bot as admin to channel/group\n2. Send /id command\n3. Copy the ID\n\n<i>All OTPs will be forwarded to this chat.</i>`;
+
+  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Cancel', 'owner_otp_forwarder')]]);
+  return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+});
+
+// ============================================
+// OWNER: Set Forwarder Bot Link
+// ============================================
+bot.action('owner_set_forwarder_bot', async (ctx) => {
+  if (ctx.from.id !== OWNER_ID) return;
+  await safeAnswerCb(ctx);
+
+  const forwarders = await OtpForwarder.find({ isActive: 1 });
+  
+  if (forwarders.length === 0) {
+    return ctx.editMessageText(`❌ <b>No Forwarders Found!</b>\n━━━━━━━━━━━━━━━━━━━━\nPlease add a forwarder first.`, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'owner_otp_forwarder')]])
+    });
+  }
+
+  const buttons = forwarders.map(f => [
+    Markup.button.callback(`🤖 ${f.chatId}`, `owner_set_bot_link_${f.id}`)
+  ]);
+  buttons.push([Markup.button.callback('🔙 Cancel', 'owner_otp_forwarder')]);
+
+  const text = `🤖 <b>SET BOT LINK</b>\n━━━━━━━━━━━━━━━━━━━━\nSelect the forwarder to set bot link for:\n\n<i>This link will be attached to every OTP message.</i>`;
+
+  return ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(() => {});
+});
+
+// ============================================
+// OWNER: Set Bot Link for Forwarder
+// ============================================
+bot.action(/^owner_set_bot_link_(.+)$/, async (ctx) => {
+  if (ctx.from.id !== OWNER_ID) return;
+  await safeAnswerCb(ctx);
+  
+  const forwarderId = ctx.match[1];
+  
+  await Session.findOneAndUpdate(
+    { userId: ctx.from.id },
+    { userId: ctx.from.id, state: 'WAITING_FORWARDER_BOT_LINK', data: forwarderId },
+    { upsert: true }
+  );
+
+  const text = `🤖 <b>SET BOT LINK</b>\n━━━━━━━━━━━━━━━━━━━━\nSend the bot link to attach:\n\n📌 <b>Example:</b>\n<code>https://t.me/RTFOTPBOT</code>\n\n<i>This link will be attached to every OTP message.</i>`;
+
+  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Cancel', 'owner_otp_forwarder')]]);
+  return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+});
+
+// ============================================
+// OWNER: Remove Forwarder
+// ============================================
+bot.action('owner_remove_forwarder', async (ctx) => {
+  if (ctx.from.id !== OWNER_ID) return;
+  await safeAnswerCb(ctx);
+
+  const forwarders = await OtpForwarder.find({ isActive: 1 });
+  
+  if (forwarders.length === 0) {
+    return ctx.editMessageText(`❌ <b>No Forwarders Found!</b>\n━━━━━━━━━━━━━━━━━━━━\nNo forwarders to remove.`, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'owner_otp_forwarder')]])
+    });
+  }
+
+  const buttons = forwarders.map(f => [
+    Markup.button.callback(`🔴 ${f.chatId}`, `owner_remove_forwarder_${f.id}`)
+  ]);
+  buttons.push([Markup.button.callback('🔙 Cancel', 'owner_otp_forwarder')]);
+
+  const text = `🔴 <b>REMOVE FORWARDER</b>\n━━━━━━━━━━━━━━━━━━━━\nSelect the forwarder to remove:`;
+
+  return ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(() => {});
+});
+
+// ============================================
+// OWNER: Remove Forwarder Action
+// ============================================
+bot.action(/^owner_remove_forwarder_(.+)$/, async (ctx) => {
+  if (ctx.from.id !== OWNER_ID) return;
+  
+  const forwarderId = ctx.match[1];
+  await OtpForwarder.deleteOne({ id: forwarderId });
+  await safeAnswerCb(ctx, '✅ Forwarder removed!');
+  
+  const text = `✅ <b>Forwarder Removed!</b>\n━━━━━━━━━━━━━━━━━━━━\nForwarder has been removed successfully.`;
+
+  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'owner_otp_forwarder')]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
@@ -1816,30 +2188,46 @@ bot.action('owner_stats', async (ctx) => {
   const totalBannedUsers = await User.countDocuments({ isSuspended: 1 });
   const totalCredits = await User.aggregate([{ $group: { _id: null, total: { $sum: '$credits' } } }]);
   const trafficStats = await TrafficStats.countDocuments();
+  const totalReferrals = await User.aggregate([{ $group: { _id: null, total: { $sum: '$referrals' } } }]);
 
-  const text = `📊 <b>BOT STATISTICS</b>\n━━━━━━━━━━━━━━━━━━━━\n👥 <b>Total Users:</b> <code>${totalUsers}</code>\n🟢 <b>Active Users:</b> <code>${totalActiveUsers}</code>\n🔴 <b>Banned Users:</b> <code>${totalBannedUsers}</code>\n📱 <b>Active Numbers:</b> <code>${totalActiveNumbers}</code>\n📬 <b>Total OTPs in DB:</b> <code>${totalOtps} / ${MAX_SAVED_OTPS}</code>\n💰 <b>Total Credits:</b> <code>${totalCredits[0]?.total || 0}</code>\n📈 <b>Traffic Countries:</b> <code>${trafficStats}</code>\n\n🕒 <b>Updated:</b> <code>${getIndianTime()}</code>`;
+  const text = `📊 <b>BOT STATISTICS</b>\n━━━━━━━━━━━━━━━━━━━━\n👥 <b>Total Users:</b> <code>${totalUsers}</code>\n🟢 <b>Active Users:</b> <code>${totalActiveUsers}</code>\n🔴 <b>Banned Users:</b> <code>${totalBannedUsers}</code>\n📱 <b>Active Numbers:</b> <code>${totalActiveNumbers}</code>\n📬 <b>Total OTPs in DB:</b> <code>${totalOtps} / ${MAX_SAVED_OTPS}</code>\n💰 <b>Total Credits:</b> <code>${totalCredits[0]?.total || 0}</code>\n📈 <b>Traffic Countries:</b> <code>${trafficStats}</code>\n🌟 <b>Total Referrals:</b> <code>${totalReferrals[0]?.total || 0}</code>\n\n🕒 <b>Updated:</b> <code>${getIndianTime()}</code>`;
 
   const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'menu_owner')]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
 // ============================================
-// OWNER: Export User Data
+// OWNER: Export User Data (FIXED)
 // ============================================
 bot.action('owner_export_data', async (ctx) => {
   if (ctx.from.id !== OWNER_ID) return;
   await safeAnswerCb(ctx);
 
-  const users = await User.find().sort({ createdAt: -1 });
-  
-  let text = `📤 <b>USER DATA EXPORT</b>\n━━━━━━━━━━━━━━━━━━━━\n`;
-  users.forEach((u, index) => {
-    text += `${index + 1}. ID: <code>${u.userId}</code> | ${u.firstName} | ${u.username || 'No username'} | Credits: ${u.credits} | Referrals: ${u.referrals} | ${u.isSuspended ? '🔴 Banned' : '🟢 Active'}\n`;
-  });
-  text += `\n━━━━━━━━━━━━━━━━━━━━\n📌 <b>Total Users:</b> ${users.length}`;
+  try {
+    const users = await User.find().sort({ createdAt: -1 });
+    
+    if (users.length === 0) {
+      return ctx.editMessageText(`📤 <b>NO USERS FOUND</b>\n━━━━━━━━━━━━━━━━━━━━\nKoi user register nahi kiya abhi tak.`, {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'menu_owner')]])
+      });
+    }
+    
+    let text = `📤 <b>USER DATA EXPORT</b>\n━━━━━━━━━━━━━━━━━━━━\n`;
+    users.forEach((u, index) => {
+      text += `${index + 1}. ID: <code>${u.userId}</code> | ${u.firstName} | ${u.username || 'No username'} | Credits: ${u.credits} | Referrals: ${u.referrals} | ${u.isSuspended ? '🔴 Banned' : '🟢 Active'}\n`;
+    });
+    text += `\n━━━━━━━━━━━━━━━━━━━━\n📌 <b>Total Users:</b> ${users.length}`;
 
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'menu_owner')]]);
-  return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+    const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'menu_owner')]]);
+    return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+  } catch (error) {
+    console.error('Export error:', error);
+    return ctx.editMessageText(`❌ <b>Error Exporting Data</b>\n━━━━━━━━━━━━━━━━━━━━\n${error.message}`, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'menu_owner')]])
+    });
+  }
 });
 
 // ============================================
@@ -2021,6 +2409,95 @@ bot.on('text', async (ctx, next) => {
     });
   }
 
+  // Channel Management - Add Channel
+  if (session.state === 'WAITING_ADD_CHANNEL') {
+    let channelInput = ctx.message.text.trim();
+    let channelId = channelInput.replace('https://t.me/', '').replace('@', '');
+    
+    await ChannelSettings.findOneAndUpdate(
+      { id: channelId },
+      { 
+        id: channelId,
+        channelUrl: `https://t.me/${channelId}`,
+        channelName: channelId
+      },
+      { upsert: true }
+    );
+    await Session.deleteOne({ userId: ctx.from.id });
+    
+    // Update REQUIRED_CHANNELS
+    const existing = REQUIRED_CHANNELS.find(c => c.id === channelId);
+    if (!existing) {
+      REQUIRED_CHANNELS.push({
+        id: channelId,
+        url: `https://t.me/${channelId}`
+      });
+    }
+    
+    return ctx.reply(`✅ <b>Channel Added Successfully!</b>\n━━━━━━━━━━━━━━━━━━━━\nChannel: @${channelId}\n\nNow users will need to join this channel too.`, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+    });
+  }
+
+  // Channel Management - Remove Channel
+  if (session.state === 'WAITING_REMOVE_CHANNEL') {
+    const channelId = ctx.message.text.trim().replace('@', '');
+    
+    await ChannelSettings.deleteOne({ id: channelId });
+    await Session.deleteOne({ userId: ctx.from.id });
+    
+    // Remove from REQUIRED_CHANNELS
+    const index = REQUIRED_CHANNELS.findIndex(c => c.id === channelId);
+    if (index !== -1) {
+      REQUIRED_CHANNELS.splice(index, 1);
+    }
+    
+    return ctx.reply(`✅ <b>Channel Removed Successfully!</b>\n━━━━━━━━━━━━━━━━━━━━\nChannel: @${channelId}\n\nUsers no longer need to join this channel.`, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+    });
+  }
+
+  // OTP Forwarder - Add
+  if (session.state === 'WAITING_ADD_FORWARDER') {
+    const chatId = ctx.message.text.trim();
+    
+    await OtpForwarder.findOneAndUpdate(
+      { id: chatId },
+      { 
+        id: chatId,
+        chatId: chatId,
+        chatType: chatId.startsWith('-100') ? 'channel' : 'group',
+        isActive: 1
+      },
+      { upsert: true }
+    );
+    await Session.deleteOne({ userId: ctx.from.id });
+    
+    return ctx.reply(`✅ <b>OTP Forwarder Added!</b>\n━━━━━━━━━━━━━━━━━━━━\nChat ID: ${chatId}\n\nAll OTPs will be forwarded here.`, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+    });
+  }
+
+  // OTP Forwarder - Bot Link
+  if (session.state === 'WAITING_FORWARDER_BOT_LINK') {
+    const botLink = ctx.message.text.trim();
+    const forwarderId = session.data;
+    
+    await OtpForwarder.findOneAndUpdate(
+      { id: forwarderId },
+      { botLink: botLink }
+    );
+    await Session.deleteOne({ userId: ctx.from.id });
+    
+    return ctx.reply(`✅ <b>Bot Link Updated!</b>\n━━━━━━━━━━━━━━━━━━━━\nBot Link: ${botLink}`, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+    });
+  }
+
   return next();
 });
 
@@ -2053,6 +2530,7 @@ bot.launch().then(() => {
   console.log(`📌 Support: @RTFGAMMING`);
   console.log(`🌐 Web: http://localhost:${PORT}`);
   console.log(`📊 Max OTPs in DB: ${MAX_SAVED_OTPS}`);
+  console.log(`📢 Required Channels: ${REQUIRED_CHANNELS.length}`);
 }).catch(err => {
   console.error('❌ Bot launch failed:', err);
 });
