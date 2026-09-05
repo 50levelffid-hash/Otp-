@@ -2,9 +2,9 @@
   "name": "rtf-otp-bot",
   "version": "1.0.0",
   "description": "RTF OTP Bot - Complete Telegram OTP Service",
-  "main": "index.js",
+  "main": "bot.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node bot.js"
   },
   "engines": {
     "node": "20.x"
