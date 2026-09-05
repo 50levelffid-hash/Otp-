@@ -3,6 +3,7 @@
 // Language: Hinglish (Proper Indian Mix)
 // Database: MongoDB
 // Owner: @RTFGAMMING
+// Version: Latest with Colorful Buttons
 // ============================================
 
 const { Telegraf, Markup } = require('telegraf');
@@ -23,7 +24,7 @@ const PORT = process.env.PORT || 3000;
 const MAX_SAVED_OTPS = 2000;
 
 // Required Channels for Verification
-const REQUIRED_CHANNELS = [
+let REQUIRED_CHANNELS = [
   { id: '@RTFGAMINGHACK0', url: 'https://t.me/RTFGAMINGHACK0' },
   { id: '@RTFGAMING1', url: 'https://t.me/RTFGAMING1' },
   { id: '@USERX1NFO', url: 'https://t.me/USERX1NFO' }
@@ -183,9 +184,10 @@ const ChannelSettingsSchema = new mongoose.Schema({
 const OtpForwarderSchema = new mongoose.Schema({
   id: { type: String, unique: true, required: true },
   chatId: { type: String, required: true },
-  chatType: { type: String, required: true }, // 'channel' or 'group'
+  chatType: { type: String, required: true },
   isActive: { type: Number, default: 1 },
   botLink: { type: String, default: '' },
+  channelLink: { type: String, default: '' },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -205,6 +207,30 @@ const OtpForwarder = mongoose.model('OtpForwarder', OtpForwarderSchema);
 // TELEGRAM BOT INIT
 // ============================================
 const bot = new Telegraf(TOKEN);
+
+// ============================================
+// COLORFUL BUTTON HELPERS
+// ============================================
+
+// Primary Blue Button
+function primaryButton(text, callback) {
+  return Markup.button.callback(text, callback);
+}
+
+// Success Green Button
+function successButton(text, callback) {
+  return Markup.button.callback(text, callback);
+}
+
+// Danger Red Button
+function dangerButton(text, callback) {
+  return Markup.button.callback(text, callback);
+}
+
+// URL Button
+function urlButton(text, url) {
+  return Markup.button.url(text, url);
+}
 
 // ============================================
 // HELPER FUNCTIONS
@@ -296,10 +322,10 @@ async function checkChannelMembership(userId) {
 
 function getMissingChannelsKeyboard(missingChannels) {
   const buttons = missingChannels.map(channel => [
-    Markup.button.url(`📢 ${channel.id}`, channel.url)
+    urlButton(`📢 ${channel.id}`, channel.url)
   ]);
-  buttons.push([Markup.button.callback('✅ I Joined', 'check_channels_joined')]);
-  buttons.push([Markup.button.callback('🏠 Home', 'menu_main')]);
+  buttons.push([successButton('✅ I Joined', 'check_channels_joined')]);
+  buttons.push([primaryButton('🏠 Home', 'menu_main')]);
   return Markup.inlineKeyboard(buttons);
 }
 
@@ -313,7 +339,6 @@ bot.action('check_channels_joined', async (ctx) => {
     await safeAnswerCb(ctx, '✅ Saare channels join ho gaye!');
     await ctx.deleteMessage();
     
-    // Check if user has pending coins from referral
     const user = await User.findOne({ userId: ctx.from.id });
     if (user && user.pendingCoins > 0) {
       await User.findOneAndUpdate(
@@ -388,6 +413,24 @@ class ZelApiClient {
       });
       return res.status === 200 ? res.data : null;
     } catch { return null; }
+  }
+
+  static async getWhatsAppOtpFeed(count = 100) {
+    try {
+      const allOtps = await this.getPublicOtpFeed(count);
+      if (!Array.isArray(allOtps)) return [];
+      
+      // Filter only WhatsApp OTPs
+      return allOtps.filter(item => {
+        if (!Array.isArray(item) || item.length < 2) return false;
+        const service = item[0]?.toLowerCase() || '';
+        const message = item[2]?.toLowerCase() || '';
+        return service.includes('whatsapp') || 
+               message.includes('whatsapp') || 
+               message.includes('wa.me') ||
+               message.includes('whatsapp code');
+      });
+    } catch { return []; }
   }
 }
 
@@ -517,10 +560,18 @@ async function getTrafficStats() {
 }
 
 // ============================================
-// SEND OTP TO FORWARDER
+// SEND OTP TO FORWARDER (Only WhatsApp OTPs)
 // ============================================
 async function sendOtpToForwarder(service, number, otpCode, message, country, countryCode) {
   try {
+    // Check if it's a WhatsApp OTP
+    const isWhatsApp = service?.toLowerCase().includes('whatsapp') || 
+                       message?.toLowerCase().includes('whatsapp') ||
+                       message?.toLowerCase().includes('wa.me') ||
+                       message?.toLowerCase().includes('whatsapp code');
+    
+    if (!isWhatsApp) return; // Only forward WhatsApp OTPs
+    
     const forwarders = await OtpForwarder.find({ isActive: 1 });
     if (forwarders.length === 0) return;
     
@@ -528,17 +579,30 @@ async function sendOtpToForwarder(service, number, otpCode, message, country, co
     const flag = getFlagEmoji(countryCode || country || 'TG');
     const formattedNumber = formatPhone(number);
     
-    const text = `📬 <b>NEW OTP RECEIVED!</b>\n━━━━━━━━━━━━━━━━━━━━\n🔹 <b>Service:</b> <code>${service}</code>\n🌍 <b>Country:</b> ${flag} <code>${countryName}</code>\n📱 <b>Number:</b> <code>${formattedNumber}</code>\n\n🔑 <b>OTP CODE:</b> <code>${otpCode}</code>\n\n💬 <b>Message:</b>\n<blockquote>${message}</blockquote>\n\n🕒 <b>Time:</b> <code>${getIndianTime()}</code>`;
+    const text = `📬 <b>WhatsApp OTP Received!</b>\n━━━━━━━━━━━━━━━━━━━━\n🔹 <b>Service:</b> <code>${service}</code>\n🌍 <b>Country:</b> ${flag} <code>${countryName}</code>\n📱 <b>Number:</b> <code>${formattedNumber}</code>\n\n🔑 <b>OTP CODE:</b> <code>${otpCode}</code>\n\n💬 <b>Message:</b>\n<blockquote>${message}</blockquote>\n\n🕒 <b>Time:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n<i>WhatsApp OTP auto-forwarded!</i>`;
     
     for (const forwarder of forwarders) {
       try {
-        const keyboard = Markup.inlineKeyboard([
-          [Markup.button.url('🤖 Bot', forwarder.botLink || 'https://t.me/RTFOTPBOT')]
-        ]);
+        const buttons = [];
+        
+        // Bot Link Button
+        if (forwarder.botLink) {
+          buttons.push([urlButton('🤖 Bot', forwarder.botLink)]);
+        }
+        
+        // Channel Link Button
+        if (forwarder.channelLink) {
+          buttons.push([urlButton('📢 Channel', forwarder.channelLink)]);
+        }
+        
+        // If no links set, add default
+        if (buttons.length === 0) {
+          buttons.push([urlButton('🤖 RTF OTP BOT', 'https://t.me/RTFOTPBOT')]);
+        }
         
         await bot.telegram.sendMessage(forwarder.chatId, text, {
           parse_mode: 'HTML',
-          ...keyboard
+          ...Markup.inlineKeyboard(buttons)
         });
       } catch (error) {
         console.error('Error sending to forwarder:', error);
@@ -558,6 +622,9 @@ function startGlobalOtpLoop() {
       const feed = await ZelApiClient.getPublicOtpFeed(100);
       if (!Array.isArray(feed)) return;
 
+      // Get WhatsApp OTPs for forwarding
+      const whatsappOtps = await ZelApiClient.getWhatsAppOtpFeed(100);
+      
       for (const item of feed) {
         if (!Array.isArray(item) || item.length < 4) continue;
         const [service, rawNum, message, timestamp, country] = item;
@@ -576,7 +643,7 @@ function startGlobalOtpLoop() {
           formattedSmsTime
         );
         
-        // Send to forwarders
+        // Send only WhatsApp OTPs to forwarder
         await sendOtpToForwarder(service, cleanNum, extractedCode, message, country, country || 'TG');
       }
 
@@ -605,16 +672,16 @@ function startGlobalOtpLoop() {
 
           const keyboard = Markup.inlineKeyboard([
             [
-              Markup.button.callback('🔄 Number Change Karo', `change_${cleanNum}_${service}_${userNumObj.countryCode || 'TG'}`),
-              Markup.button.callback('🗑️ Number Chhodo', `rel_${cleanNum}_${service}`)
+              primaryButton('🔄 Change', `change_${cleanNum}_${service}_${userNumObj.countryCode || 'TG'}`),
+              dangerButton('🗑️ Release', `rel_${cleanNum}_${service}`)
             ],
             [
-              Markup.button.callback('📜 Is Number Ka History', `history_num_${cleanNum}`),
-              Markup.button.callback('📱 Mere Numbers', 'menu_my_numbers')
+              primaryButton('📜 History', `history_num_${cleanNum}`),
+              primaryButton('📱 My Numbers', 'menu_my_numbers')
             ],
             [
-              Markup.button.callback('🌐 Services', 'menu_services'),
-              Markup.button.callback('🏠 Home', 'menu_main')
+              primaryButton('🌐 Services', 'menu_services'),
+              primaryButton('🏠 Home', 'menu_main')
             ]
           ]);
 
@@ -667,28 +734,28 @@ bot.use(async (ctx, next) => {
 function getMainMenuKeyboard(userId) {
   const btns = [
     [
-      Markup.button.callback('🌐 Number Lo / Lease Karo', 'menu_services'),
-      Markup.button.callback('📱 Mere Active Numbers', 'menu_my_numbers')
+      primaryButton('🌐 Number Lo / Lease Karo', 'menu_services'),
+      primaryButton('📱 Mere Active Numbers', 'menu_my_numbers')
     ],
     [
-      Markup.button.callback('🔍 Manual OTP Check Karo', 'menu_manual_check'),
-      Markup.button.callback('📜 OTP History', 'menu_history_global')
+      primaryButton('🔍 Manual OTP Check Karo', 'menu_manual_check'),
+      primaryButton('📜 OTP History', 'menu_history_global')
     ],
     [
-      Markup.button.callback('📊 Server Status', 'menu_stats'),
-      Markup.button.callback('📈 Traffic Stats', 'menu_traffic')
+      primaryButton('📊 Server Status', 'menu_stats'),
+      primaryButton('📈 Traffic Stats', 'menu_traffic')
     ],
     [
-      Markup.button.callback('👤 Mera Profile', 'menu_profile'),
-      Markup.button.callback('🎁 Refer & Earn', 'menu_refer')
+      primaryButton('👤 Mera Profile', 'menu_profile'),
+      successButton('🎁 Refer & Earn', 'menu_refer')
     ],
     [
-      Markup.button.callback('💰 Buy Credits', 'menu_buy_credits')
+      successButton('💰 Buy Credits', 'menu_buy_credits')
     ]
   ];
 
   if (userId === OWNER_ID) {
-    btns.push([Markup.button.callback('👑 Owner Panel', 'menu_owner')]);
+    btns.push([dangerButton('👑 Owner Panel', 'menu_owner')]);
   }
   return Markup.inlineKeyboard(btns);
 }
@@ -733,11 +800,9 @@ bot.start(async (ctx) => {
       referredBy: referrerId
     });
 
-    // Check if user has joined channels
     const missingChannels = await checkChannelMembership(user.id);
     
     if (missingChannels.length === 0 && referrerId && referrerId !== user.id) {
-      // User has joined all channels, give referral coin
       const referrer = await User.findOne({ userId: referrerId });
       if (referrer) {
         await User.findOneAndUpdate(
@@ -755,7 +820,6 @@ bot.start(async (ctx) => {
         bot.telegram.sendMessage(referrerId, '🎁 <b>Referral Coin Added!</b>\n━━━━━━━━━━━━━━━━━━━━\nAapke referral se ek naya user aaya hai!\n⭐ <b>+1 Coin</b>\n\nTotal Credits: <code>' + (referrer.credits + 1) + '</code>', { parse_mode: 'HTML' }).catch(() => {});
       }
     } else if (missingChannels.length > 0 && referrerId && referrerId !== user.id) {
-      // User hasn't joined channels yet, save coin as pending
       await User.findOneAndUpdate(
         { userId: user.id },
         { pendingCoins: 1 }
@@ -838,9 +902,9 @@ bot.action('menu_manual_check', async (ctx) => {
     return ctx.editMessageText(`⚠️ <b>INSUFFICIENT CREDITS!</b>\n━━━━━━━━━━━━━━━━━━━━\nAapke paas manual check karne ke liye credits nahi hain.\n\n💰 <b>Credits Needed:</b> <code>1</code>\n📌 <b>Your Balance:</b> <code>${user ? user.credits : 0}</code>\n\n🎁 Refer karo aur free credits pao!\n💰 Buy Credits se unlimited access lo!`, {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback('🎁 Refer & Earn', 'menu_refer')],
-        [Markup.button.callback('💰 Buy Credits', 'menu_buy_credits')],
-        [Markup.button.callback('🏠 Home', 'menu_main')]
+        [successButton('🎁 Refer & Earn', 'menu_refer')],
+        [successButton('💰 Buy Credits', 'menu_buy_credits')],
+        [primaryButton('🏠 Home', 'menu_main')]
       ])
     }).catch(() => {});
   }
@@ -852,7 +916,7 @@ bot.action('menu_manual_check', async (ctx) => {
   );
 
   const text = `🔍 <b>MANUAL OTP CHECK</b>\n━━━━━━━━━━━━━━━━━━━━\nJo number check karna hai wo send karo (example: <code>+919876543210</code>).\n\n⚙️ <i>System automatically 100 latest SMS scan karega aur dikhayega.</i>\n💰 <b>Cost:</b> <code>1 Credit</code>\n\n🕒 <code>${getIndianTime()}</code>`;
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Home', 'menu_main')]]);
+  const keyboard = Markup.inlineKeyboard([[primaryButton('🔙 Home', 'menu_main')]]);
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
@@ -915,14 +979,14 @@ bot.on('text', async (ctx, next) => {
 
     if (isReleasedSuccess) {
       text += `💡 <b>Option:</b>\nYe number valid hai! Isko apne active numbers mein add kar sakte ho taaki system auto-track kare.`;
-      buttons.push([Markup.button.callback('➕ Save to My Numbers', `add_manual_${inputNum}_${detectedService}_${detectedCountry}`)]);
+      buttons.push([successButton('➕ Save to My Numbers', `add_manual_${inputNum}_${detectedService}_${detectedCountry}`)]);
     }
 
     text += `\n━━━━━━━━━━━━━━━━━━━━\n🕒 <code>${getIndianTime()}</code>`;
 
     buttons.push([
-      Markup.button.callback('🔍 Check Another Number', 'menu_manual_check'),
-      Markup.button.callback('🏠 Home', 'menu_main')
+      primaryButton('🔍 Check Another', 'menu_manual_check'),
+      primaryButton('🏠 Home', 'menu_main')
     ]);
 
     await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
@@ -946,7 +1010,7 @@ bot.on('text', async (ctx, next) => {
 
     return ctx.reply(`✅ <b>Limit Update Ho Gaya!</b>\nUser ID: <code>${targetUserId}</code>\nNaya Limit: <b>${newLimit} Numbers</b>`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+      ...Markup.inlineKeyboard([[dangerButton('👑 Owner Panel', 'menu_owner')]])
     });
   }
 
@@ -962,12 +1026,12 @@ bot.on('text', async (ctx, next) => {
       );
       return ctx.reply(`✅ <b>QR Code Description Updated!</b>\n━━━━━━━━━━━━━━━━━━━━\nNew Description:\n<code>${description}</code>`, {
         parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+        ...Markup.inlineKeyboard([[dangerButton('👑 Owner Panel', 'menu_owner')]])
       });
     } else {
       return ctx.reply('❌ QR Code not found! Please add QR code first.', {
         parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+        ...Markup.inlineKeyboard([[dangerButton('👑 Owner Panel', 'menu_owner')]])
       });
     }
   }
@@ -998,7 +1062,7 @@ bot.on('text', async (ctx, next) => {
 
     return ctx.reply(`✅ <b>QR Code Updated!</b>\n━━━━━━━━━━━━━━━━━━━━\nImage URL: <code>${imageUrl}</code>\n\nQR code is now available for users to scan.`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'owner_manage_qr')]])
+      ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_manage_qr')]])
     });
   }
 
@@ -1022,20 +1086,30 @@ bot.on('text', async (ctx, next) => {
 
     return ctx.reply(`📢 <b>Broadcast Complete!</b>\n━━━━━━━━━━━━━━━━━━━━\n✅ <b>Sent:</b> <code>${success}</code> users\n❌ <b>Failed:</b> <code>${failed}</code> users\n📌 <b>Total:</b> <code>${users.length}</code> users\n\nMessage sent to all active users.`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+      ...Markup.inlineKeyboard([[dangerButton('👑 Owner Panel', 'menu_owner')]])
     });
   }
 
   // Channel Management - Add Channel
   if (session.state === 'WAITING_ADD_CHANNEL') {
-    const channelUrl = ctx.message.text.trim();
-    const channelId = channelUrl.split('/').pop();
+    let channelInput = ctx.message.text.trim();
+    let channelId = channelInput.replace('https://t.me/', '').replace('@', '');
+    
+    // Check if channel already exists
+    const exists = REQUIRED_CHANNELS.find(c => c.id === channelId);
+    if (exists) {
+      await Session.deleteOne({ userId: ctx.from.id });
+      return ctx.reply(`⚠️ <b>Channel Already Exists!</b>\n━━━━━━━━━━━━━━━━━━━━\nChannel @${channelId} already exists in the list.`, {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_manage_channels')]])
+      });
+    }
     
     await ChannelSettings.findOneAndUpdate(
       { id: channelId },
       { 
         id: channelId,
-        channelUrl: channelUrl,
+        channelUrl: `https://t.me/${channelId}`,
         channelName: channelId
       },
       { upsert: true }
@@ -1043,17 +1117,14 @@ bot.on('text', async (ctx, next) => {
     await Session.deleteOne({ userId: ctx.from.id });
     
     // Update REQUIRED_CHANNELS
-    const channel = await ChannelSettings.findOne({ id: channelId });
-    if (channel) {
-      REQUIRED_CHANNELS.push({
-        id: channel.id,
-        url: channel.channelUrl
-      });
-    }
+    REQUIRED_CHANNELS.push({
+      id: channelId,
+      url: `https://t.me/${channelId}`
+    });
     
-    return ctx.reply(`✅ <b>Channel Added Successfully!</b>\n━━━━━━━━━━━━━━━━━━━━\nChannel: ${channelUrl}\n\nNow users will need to join this channel too.`, {
+    return ctx.reply(`✅ <b>Channel Added Successfully!</b>\n━━━━━━━━━━━━━━━━━━━━\nChannel: @${channelId}\n\nNow users will need to join this channel too.`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+      ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_manage_channels')]])
     });
   }
 
@@ -1061,24 +1132,33 @@ bot.on('text', async (ctx, next) => {
   if (session.state === 'WAITING_REMOVE_CHANNEL') {
     const channelId = ctx.message.text.trim().replace('@', '');
     
-    await ChannelSettings.deleteOne({ id: channelId });
-    await Session.deleteOne({ userId: ctx.from.id });
-    
     // Remove from REQUIRED_CHANNELS
     const index = REQUIRED_CHANNELS.findIndex(c => c.id === channelId);
     if (index !== -1) {
       REQUIRED_CHANNELS.splice(index, 1);
     }
     
+    await ChannelSettings.deleteOne({ id: channelId });
+    await Session.deleteOne({ userId: ctx.from.id });
+    
     return ctx.reply(`✅ <b>Channel Removed Successfully!</b>\n━━━━━━━━━━━━━━━━━━━━\nChannel: @${channelId}\n\nUsers no longer need to join this channel.`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+      ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_manage_channels')]])
     });
   }
 
   // OTP Forwarder - Add
   if (session.state === 'WAITING_ADD_FORWARDER') {
     const chatId = ctx.message.text.trim();
+    
+    const exists = await OtpForwarder.findOne({ id: chatId });
+    if (exists) {
+      await Session.deleteOne({ userId: ctx.from.id });
+      return ctx.reply(`⚠️ <b>Forwarder Already Exists!</b>\n━━━━━━━━━━━━━━━━━━━━\nThis forwarder is already added.`, {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_otp_forwarder')]])
+      });
+    }
     
     await OtpForwarder.findOneAndUpdate(
       { id: chatId },
@@ -1092,9 +1172,9 @@ bot.on('text', async (ctx, next) => {
     );
     await Session.deleteOne({ userId: ctx.from.id });
     
-    return ctx.reply(`✅ <b>OTP Forwarder Added!</b>\n━━━━━━━━━━━━━━━━━━━━\nChat ID: ${chatId}\n\nAll OTPs will be forwarded here.`, {
+    return ctx.reply(`✅ <b>OTP Forwarder Added!</b>\n━━━━━━━━━━━━━━━━━━━━\nChat ID: ${chatId}\n\nAll WhatsApp OTPs will be forwarded here.`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+      ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_otp_forwarder')]])
     });
   }
 
@@ -1111,7 +1191,24 @@ bot.on('text', async (ctx, next) => {
     
     return ctx.reply(`✅ <b>Bot Link Updated!</b>\n━━━━━━━━━━━━━━━━━━━━\nBot Link: ${botLink}`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+      ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_otp_forwarder')]])
+    });
+  }
+
+  // OTP Forwarder - Channel Link
+  if (session.state === 'WAITING_FORWARDER_CHANNEL_LINK') {
+    const channelLink = ctx.message.text.trim();
+    const forwarderId = session.data;
+    
+    await OtpForwarder.findOneAndUpdate(
+      { id: forwarderId },
+      { channelLink: channelLink }
+    );
+    await Session.deleteOne({ userId: ctx.from.id });
+    
+    return ctx.reply(`✅ <b>Channel Link Updated!</b>\n━━━━━━━━━━━━━━━━━━━━\nChannel Link: ${channelLink}`, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_otp_forwarder')]])
     });
   }
 
@@ -1136,8 +1233,8 @@ bot.action(/^add_manual_([0-9]+)_(.+)_(.+)$/, async (ctx) => {
     return ctx.editMessageText(`⚠️ <b>SLOT FULL!</b>\n━━━━━━━━━━━━━━━━━━━━\nAapka maximum save limit: <b>${maxLimit} numbers</b>.\nPehle koi number release karo.`, {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback('📱 Manage Numbers', 'menu_my_numbers')],
-        [Markup.button.callback('🏠 Home', 'menu_main')]
+        [primaryButton('📱 Manage Numbers', 'menu_my_numbers')],
+        [primaryButton('🏠 Home', 'menu_main')]
       ])
     }).catch(() => {});
   }
@@ -1154,8 +1251,8 @@ bot.action(/^add_manual_([0-9]+)_(.+)_(.+)$/, async (ctx) => {
   const text = `✅ <b>NUMBER SAVE HO GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n📱 <b>Virtual Number:</b> <code>${formatPhone(cleanNum)}</code>\n🔹 <b>Service:</b> <code>${serviceName}</code>\n🌍 <b>Country:</b> ${flag} <code>${countryName}</code>\n\n🕒 <b>Time:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n💡 <i>Ab system automatically SMS detect karega aur aapko bhejega.</i>`;
 
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('📱 My Numbers', 'menu_my_numbers')],
-    [Markup.button.callback('🏠 Home', 'menu_main')]
+    [primaryButton('📱 My Numbers', 'menu_my_numbers')],
+    [primaryButton('🏠 Home', 'menu_main')]
   ]);
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
@@ -1183,7 +1280,7 @@ bot.action('menu_profile', async (ctx) => {
   const text = `👤 <b>USER PROFILE</b>\n━━━━━━━━━━━━━━━━━━━━\n🆔 <b>User ID:</b> <code>${ctx.from.id}</code>\n👤 <b>Name:</b> <code>${ctx.from.first_name}</code>\n🏷️ <b>Username:</b> @${ctx.from.username || '-'}\n📱 <b>Contact:</b> <code>${phone}</code>\n💎 <b>Status:</b> <code>${isOwner ? '👑 Owner' : 'User'}</code>\n🔒 <b>Number Limit:</b> <code>${limit === Infinity ? 'Unlimited (24 hrs)' : limit + ' Numbers'}</code>\n💰 <b>Credits:</b> <code>${credits}</code>\n🌟 <b>Total Referrals:</b> <code>${referrals}</code>\n⏳ <b>Unlimited Active:</b> <code>${unlimitedText}</code>\n\n🕒 <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n<i>Data securely store hai MongoDB mein.</i>\n\n📌 <b>Support:</b> @RTFGAMMING`;
   
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('🔙 Home', 'menu_main')]
+    [primaryButton('🔙 Home', 'menu_main')]
   ]);
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
@@ -1198,14 +1295,14 @@ bot.action('menu_services', async (ctx) => {
 
   if (!services || services.length === 0) {
     return ctx.editMessageText(`❌ <b>Services Down Hain</b>\n━━━━━━━━━━━━━━━━━━━━\nAPI server se connect nahi ho pa raha. Thodi der baad try karo.\n\n🕒 <code>${getIndianTime()}</code>`, Markup.inlineKeyboard([
-      [Markup.button.callback('🏠 Home', 'menu_main')]
+      [primaryButton('🏠 Home', 'menu_main')]
     ]), { parse_mode: 'HTML' }).catch(() => {});
   }
 
   const buttons = services.slice(0, 10).map(item => [
-    Markup.button.callback(`🔹 ${item.name} ── (${item.count} Stock)`, `svc_${item.name}`)
+    primaryButton(`🔹 ${item.name} ── (${item.count} Stock)`, `svc_${item.name}`)
   ]);
-  buttons.push([Markup.button.callback('🏠 Home', 'menu_main')]);
+  buttons.push([primaryButton('🏠 Home', 'menu_main')]);
 
   const text = `🌐 <b>SELECT SERVICE / APP</b>\n━━━━━━━━━━━━━━━━━━━━\nJis app ka number chahiye usko select karo:`;
 
@@ -1226,7 +1323,7 @@ bot.action(/^svc_(.+)$/, async (ctx) => {
   if (!countries || countries.length === 0) {
     return ctx.editMessageText(`❌ <b>Country Stock Khatam</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>${serviceName}</b> ke liye koi country available nahi hai.\n\n🕒 <code>${getIndianTime()}</code>`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('🔙 Back to Services', 'menu_services')]])
+      ...Markup.inlineKeyboard([[primaryButton('🔙 Back to Services', 'menu_services')]])
     }).catch(() => {});
   }
 
@@ -1234,10 +1331,10 @@ bot.action(/^svc_(.+)$/, async (ctx) => {
     const fullName = getFullCountryName(item.name);
     const flag = getFlagEmoji(item.name);
     return [
-      Markup.button.callback(`${flag} ${fullName} ── (${item.count} Stock)`, `req_${serviceName}_${item.name}`)
+      primaryButton(`${flag} ${fullName} ── (${item.count} Stock)`, `req_${serviceName}_${item.name}`)
     ];
   });
-  buttons.push([Markup.button.callback('🔙 Back to Services', 'menu_services')]);
+  buttons.push([primaryButton('🔙 Back to Services', 'menu_services')]);
 
   const text = `📦 <b>SELECT COUNTRY</b>\n━━━━━━━━━━━━━━━━━━━━\n📌 <b>Service:</b> <code>${serviceName.toUpperCase()}</code>\nNumber kis country ka chahiye?`;
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(() => {});
@@ -1262,9 +1359,9 @@ bot.action(/^req_(.+)_(.+)$/, async (ctx) => {
       return ctx.editMessageText(`⚠️ <b>INSUFFICIENT CREDITS!</b>\n━━━━━━━━━━━━━━━━━━━━\nNumber lene ke liye credits chahiye.\n\n💰 <b>Credits Needed:</b> <code>1</code>\n📌 <b>Your Balance:</b> <code>${user ? user.credits : 0}</code>\n\n🎁 Refer karo aur free credits pao!\n💰 Buy Credits se unlimited access lo!`, {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([
-          [Markup.button.callback('🎁 Refer & Earn', 'menu_refer')],
-          [Markup.button.callback('💰 Buy Credits', 'menu_buy_credits')],
-          [Markup.button.callback('🏠 Home', 'menu_main')]
+          [successButton('🎁 Refer & Earn', 'menu_refer')],
+          [successButton('💰 Buy Credits', 'menu_buy_credits')],
+          [primaryButton('🏠 Home', 'menu_main')]
         ])
       }).catch(() => {});
     }
@@ -1278,8 +1375,8 @@ bot.action(/^req_(.+)_(.+)$/, async (ctx) => {
     return ctx.editMessageText(`⚠️ <b>SLOT FULL!</b>\n━━━━━━━━━━━━━━━━━━━━\nMaximum <b>${maxLimit} numbers</b> save kar sakte ho.\nPehle koi number release karo.`, {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback('📱 My Numbers', 'menu_my_numbers')],
-        [Markup.button.callback('🏠 Home', 'menu_main')]
+        [primaryButton('📱 My Numbers', 'menu_my_numbers')],
+        [primaryButton('🏠 Home', 'menu_main')]
       ])
     }).catch(() => {});
   }
@@ -1310,18 +1407,18 @@ bot.action(/^req_(.+)_(.+)$/, async (ctx) => {
     const text = `🎉 <b>NUMBER MIL GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n🔹 <b>Service:</b> <code>${serviceName}</code>\n🌍 <b>Country:</b> ${flag} <code>${countryName}</code>\n📱 <b>Number:</b> <code>${formattedNum}</code>\n🆔 <b>Order ID:</b> <code>${reqId}</code>\n✅ <b>Status:</b> <code>Fresh Number</code>\n\n🕒 <b>Time:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n💡 <b>Tip:</b> Ye number app mein daalo. System automatically OTP detect karega.`;
     
     const keyboard = Markup.inlineKeyboard([
-      [Markup.button.callback('⚡ Check OTP', `otp_${cleanNum}_${serviceName}_${countryCode}`)],
+      [primaryButton('⚡ Check OTP', `otp_${cleanNum}_${serviceName}_${countryCode}`)],
       [
-        Markup.button.callback('🔄 Change Number', `change_${cleanNum}_${serviceName}_${countryCode}`),
-        Markup.button.callback('🗑️ Release Number', `rel_${cleanNum}_${serviceName}`)
+        primaryButton('🔄 Change Number', `change_${cleanNum}_${serviceName}_${countryCode}`),
+        dangerButton('🗑️ Release Number', `rel_${cleanNum}_${serviceName}`)
       ],
       [
-        Markup.button.callback('📜 Number History', `history_num_${cleanNum}`),
-        Markup.button.callback('📱 My Numbers', 'menu_my_numbers')
+        primaryButton('📜 Number History', `history_num_${cleanNum}`),
+        primaryButton('📱 My Numbers', 'menu_my_numbers')
       ],
       [
-        Markup.button.callback('🌐 Other Services', 'menu_services'),
-        Markup.button.callback('🏠 Home', 'menu_main')
+        primaryButton('🌐 Other Services', 'menu_services'),
+        primaryButton('🏠 Home', 'menu_main')
       ]
     ]);
     return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
@@ -1330,8 +1427,8 @@ bot.action(/^req_(.+)_(.+)$/, async (ctx) => {
     const text = `❌ <b>NUMBER NAHI MILA!</b>\n━━━━━━━━━━━━━━━━━━━━\n🔹 <b>Service:</b> <code>${serviceName}</code>\n🌍 <b>Country:</b> ${flag} <code>${countryName}</code>\n⚠️ <b>Reason:</b> ${errorMsg}\n\n🕒 <code>${getIndianTime()}</code>`;
     
     const keyboard = Markup.inlineKeyboard([
-      [Markup.button.callback('🔙 Try Other Country', `svc_${serviceName}`)],
-      [Markup.button.callback('🏠 Home', 'menu_main')]
+      [primaryButton('🔙 Try Other Country', `svc_${serviceName}`)],
+      [primaryButton('🏠 Home', 'menu_main')]
     ]);
     return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
   }
@@ -1372,18 +1469,18 @@ bot.action(/^change_(.+)_(.+)_(.+)$/, async (ctx) => {
     const text = `🔄 <b>NUMBER CHANGE HO GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n🔹 <b>Service:</b> <code>${serviceName}</code>\n🌍 <b>Country:</b> ${flag} <code>${countryName}</code>\n📱 <b>Naya Number:</b> <code>${formattedNum}</code>\n🗑️ <b>Purana Number:</b> <code>${formatPhone(oldCleanNum)}</code>\n🆔 <b>Order ID:</b> <code>${reqId}</code>\n✅ <b>Status:</b> <code>Fresh Number</code>\n\n🕒 <b>Time:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n💡 <i>Naya number active ho gaya hai. SMS auto-track hoga.</i>`;
     
     const keyboard = Markup.inlineKeyboard([
-      [Markup.button.callback('⚡ Check OTP', `otp_${newCleanNum}_${serviceName}_${countryCode}`)],
+      [primaryButton('⚡ Check OTP', `otp_${newCleanNum}_${serviceName}_${countryCode}`)],
       [
-        Markup.button.callback('🔄 Change Again', `change_${newCleanNum}_${serviceName}_${countryCode}`),
-        Markup.button.callback('🗑️ Release', `rel_${newCleanNum}_${serviceName}`)
+        primaryButton('🔄 Change Again', `change_${newCleanNum}_${serviceName}_${countryCode}`),
+        dangerButton('🗑️ Release', `rel_${newCleanNum}_${serviceName}`)
       ],
       [
-        Markup.button.callback('📜 History', `history_num_${newCleanNum}`),
-        Markup.button.callback('📱 My Numbers', 'menu_my_numbers')
+        primaryButton('📜 History', `history_num_${newCleanNum}`),
+        primaryButton('📱 My Numbers', 'menu_my_numbers')
       ],
       [
-        Markup.button.callback('🌐 Services', 'menu_services'),
-        Markup.button.callback('🏠 Home', 'menu_main')
+        primaryButton('🌐 Services', 'menu_services'),
+        primaryButton('🏠 Home', 'menu_main')
       ]
     ]);
     return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
@@ -1392,8 +1489,8 @@ bot.action(/^change_(.+)_(.+)_(.+)$/, async (ctx) => {
     const text = `⚠️ <b>DHYAAN DO!</b>\n━━━━━━━━━━━━━━━━━━━━\nPurana number <code>${formatPhone(oldCleanNum)}</code> release ho gaya, par naya number nahi mila.\n\n⚠️ <b>Reason:</b> ${errorMsg}\n🕒 <code>${getIndianTime()}</code>`;
     
     const keyboard = Markup.inlineKeyboard([
-      [Markup.button.callback('🌐 Buy New Number', 'menu_services')],
-      [Markup.button.callback('🏠 Home', 'menu_main')]
+      [primaryButton('🌐 Buy New Number', 'menu_services')],
+      [primaryButton('🏠 Home', 'menu_main')]
     ]);
     return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
   }
@@ -1440,19 +1537,19 @@ bot.action(/^otp_([^_]+)(?:_(.+)_(.+))?$/, async (ctx) => {
     : null;
 
   const row2 = [];
-  if (changeBtnData) row2.push(Markup.button.callback('🔄 Change Number', changeBtnData));
-  row2.push(Markup.button.callback('🗑️ Release', `rel_${cleanNum}_${serviceName}`));
+  if (changeBtnData) row2.push(primaryButton('🔄 Change Number', changeBtnData));
+  row2.push(dangerButton('🗑️ Release', `rel_${cleanNum}_${serviceName}`));
 
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('🔄 Refresh OTP', ctx.match[0])],
+    [primaryButton('🔄 Refresh OTP', ctx.match[0])],
     row2,
     [
-      Markup.button.callback('📜 Number History', `history_num_${cleanNum}`),
-      Markup.button.callback('📱 My Numbers', 'menu_my_numbers')
+      primaryButton('📜 Number History', `history_num_${cleanNum}`),
+      primaryButton('📱 My Numbers', 'menu_my_numbers')
     ],
     [
-      Markup.button.callback('🌐 Services', 'menu_services'),
-      Markup.button.callback('🏠 Home', 'menu_main')
+      primaryButton('🌐 Services', 'menu_services'),
+      primaryButton('🏠 Home', 'menu_main')
     ]
   ]);
 
@@ -1477,9 +1574,9 @@ bot.action(/^rel_([^_]+)(?:_(.+))?$/, async (ctx) => {
   const text = `🗑️ <b>NUMBER RELEASE HO GAYA!</b>\n━━━━━━━━━━━━━━━━━━━━\n📱 <b>Number:</b> <code>${formatPhone(cleanNum)}</code>\n🔹 <b>Service:</b> <code>${serviceName}</code>\n\n🕒 <b>Time:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n<i>Number wapas pool mein chala gaya. Ab tracking band ho gayi.</i>`;
   
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('📱 My Active Numbers', 'menu_my_numbers')],
-    [Markup.button.callback('🌐 Buy New Number', 'menu_services')],
-    [Markup.button.callback('🏠 Home', 'menu_main')]
+    [primaryButton('📱 My Active Numbers', 'menu_my_numbers')],
+    [primaryButton('🌐 Buy New Number', 'menu_services')],
+    [primaryButton('🏠 Home', 'menu_main')]
   ]);
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
@@ -1495,8 +1592,8 @@ bot.action('menu_my_numbers', async (ctx) => {
   if (!activeDbNumbers || activeDbNumbers.length === 0) {
     const text = `📭 <b>KOI NUMBER NAHI HAI</b>\n━━━━━━━━━━━━━━━━━━━━\nAbhi tak aapne koi number save nahi kiya.\n\n🕒 <code>${getIndianTime()}</code>`;
     const keyboard = Markup.inlineKeyboard([
-      [Markup.button.callback('🌐 Buy / Lease Number', 'menu_services')],
-      [Markup.button.callback('🏠 Home', 'menu_main')]
+      [primaryButton('🌐 Buy / Lease Number', 'menu_services')],
+      [primaryButton('🏠 Home', 'menu_main')]
     ]);
     return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
   }
@@ -1509,15 +1606,15 @@ bot.action('menu_my_numbers', async (ctx) => {
   const buttons = activeDbNumbers.map(item => {
     const flag = getFlagEmoji(item.countryCode);
     return [
-      Markup.button.callback(`📱 ${formatPhone(item.number)} ${flag} [${item.service}]`, `otp_${item.number}_${item.service}_${item.countryCode}`)
+      primaryButton(`📱 ${formatPhone(item.number)} ${flag} [${item.service}]`, `otp_${item.number}_${item.service}_${item.countryCode}`)
     ];
   });
   
   buttons.push([
-    Markup.button.callback('📜 OTP History', 'menu_history_global'),
-    Markup.button.callback('🌐 Buy More', 'menu_services')
+    primaryButton('📜 OTP History', 'menu_history_global'),
+    primaryButton('🌐 Buy More', 'menu_services')
   ]);
-  buttons.push([Markup.button.callback('🏠 Home', 'menu_main')]);
+  buttons.push([primaryButton('🏠 Home', 'menu_main')]);
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(() => {});
 });
@@ -1536,8 +1633,8 @@ bot.action(/^menu_history_global(?:_(\d+))?$/, async (ctx) => {
   if (!history || history.length === 0) {
     const text = `📜 <b>OTP HISTORY KHALI HAI</b>\n━━━━━━━━━━━━━━━━━━━━\nAbhi tak koi OTP receive nahi hua.\n\n🕒 <code>${getIndianTime()}</code>`;
     const keyboard = Markup.inlineKeyboard([
-      [Markup.button.callback('📱 My Numbers', 'menu_my_numbers')],
-      [Markup.button.callback('🏠 Home', 'menu_main')]
+      [primaryButton('📱 My Numbers', 'menu_my_numbers')],
+      [primaryButton('🏠 Home', 'menu_main')]
     ]);
     return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
   }
@@ -1552,12 +1649,12 @@ bot.action(/^menu_history_global(?:_(\d+))?$/, async (ctx) => {
 
   const buttons = [];
   const navRow = [];
-  if (page > 1) navRow.push(Markup.button.callback('◀️ Previous', `menu_history_global_${page - 1}`));
-  if (page < totalPages) navRow.push(Markup.button.callback('Next ▶️', `menu_history_global_${page + 1}`));
+  if (page > 1) navRow.push(primaryButton('◀️ Previous', `menu_history_global_${page - 1}`));
+  if (page < totalPages) navRow.push(primaryButton('Next ▶️', `menu_history_global_${page + 1}`));
   if (navRow.length > 0) buttons.push(navRow);
 
-  buttons.push([Markup.button.callback('📱 My Numbers', 'menu_my_numbers'), Markup.button.callback('🌐 Services', 'menu_services')]);
-  buttons.push([Markup.button.callback('🏠 Home', 'menu_main')]);
+  buttons.push([primaryButton('📱 My Numbers', 'menu_my_numbers'), primaryButton('🌐 Services', 'menu_services')]);
+  buttons.push([primaryButton('🏠 Home', 'menu_main')]);
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(() => {});
 });
@@ -1577,8 +1674,8 @@ bot.action(/^history_num_([0-9]+)(?:_(\d+))?$/, async (ctx) => {
   if (!history || history.length === 0) {
     const text = `📜 <b>NO OTP HISTORY FOR: <code>${formatPhone(cleanNum)}</code></b>\n━━━━━━━━━━━━━━━━━━━━\nIs number pe abhi tak koi OTP nahi aaya.\n\n🕒 <code>${getIndianTime()}</code>`;
     const keyboard = Markup.inlineKeyboard([
-      [Markup.button.callback('🔙 Back to Numbers', 'menu_my_numbers')],
-      [Markup.button.callback('🏠 Home', 'menu_main')]
+      [primaryButton('🔙 Back to Numbers', 'menu_my_numbers')],
+      [primaryButton('🏠 Home', 'menu_main')]
     ]);
     return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
   }
@@ -1593,12 +1690,12 @@ bot.action(/^history_num_([0-9]+)(?:_(\d+))?$/, async (ctx) => {
 
   const buttons = [];
   const navRow = [];
-  if (page > 1) navRow.push(Markup.button.callback('◀️ Previous', `history_num_${cleanNum}_${page - 1}`));
-  if (page < totalPages) navRow.push(Markup.button.callback('Next ▶️', `history_num_${cleanNum}_${page + 1}`));
+  if (page > 1) navRow.push(primaryButton('◀️ Previous', `history_num_${cleanNum}_${page - 1}`));
+  if (page < totalPages) navRow.push(primaryButton('Next ▶️', `history_num_${cleanNum}_${page + 1}`));
   if (navRow.length > 0) buttons.push(navRow);
 
-  buttons.push([Markup.button.callback('🔙 Back to Numbers', 'menu_my_numbers')]);
-  buttons.push([Markup.button.callback('🏠 Home', 'menu_main')]);
+  buttons.push([primaryButton('🔙 Back to Numbers', 'menu_my_numbers')]);
+  buttons.push([primaryButton('🏠 Home', 'menu_main')]);
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(() => {});
 });
@@ -1617,7 +1714,7 @@ bot.action('menu_stats', async (ctx) => {
     text = `❌ <b>STATS LOAD NAHI HO PAYE</b>\n━━━━━━━━━━━━━━━━━━━━\nServer response nahi de raha.\n\n🕒 <code>${getIndianTime()}</code>`;
   }
 
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Home', 'menu_main')]]);
+  const keyboard = Markup.inlineKeyboard([[primaryButton('🔙 Home', 'menu_main')]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
@@ -1645,8 +1742,8 @@ bot.action('menu_traffic', async (ctx) => {
   text += `━━━━━━━━━━━━━━━━━━━━\n🕒 <b>Updated:</b> <code>${getIndianTime()}</code>\n━━━━━━━━━━━━━━━━━━━━\n<i>Data based on latest ${MAX_SAVED_OTPS} OTP records.</i>`;
 
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('🔄 Refresh', 'menu_traffic')],
-    [Markup.button.callback('🔙 Home', 'menu_main')]
+    [primaryButton('🔄 Refresh', 'menu_traffic')],
+    [primaryButton('🔙 Home', 'menu_main')]
   ]);
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
@@ -1666,7 +1763,7 @@ bot.action('menu_refer', async (ctx) => {
 
   const keyboard = Markup.inlineKeyboard([
     [Markup.button.switchToChat('📤 Share Referral Link', `https://t.me/${botUsername}?start=${ctx.from.id}`)],
-    [Markup.button.callback('🏠 Home', 'menu_main')]
+    [primaryButton('🏠 Home', 'menu_main')]
   ]);
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
@@ -1688,8 +1785,8 @@ bot.action('menu_buy_credits', async (ctx) => {
   const text = `💰 <b>BUY CREDITS</b>\n━━━━━━━━━━━━━━━━━━━━\n${qrText}📌 <b>Packages:</b>\n1️⃣ <b>10 Credits</b> → ₹20\n2️⃣ <b>Unlimited (24 Hours)</b> → ₹50\n\n💳 <b>How to Buy:</b>\n1. Scan QR code above\n2. Pay the amount\n3. Send payment screenshot to @RTFGAMMING\n4. Credits will be added manually\n\n━━━━━━━━━━━━━━━━━━━━\n🕒 <code>${getIndianTime()}</code>`;
 
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('📞 Contact Owner', 'contact_owner')],
-    [Markup.button.callback('🏠 Home', 'menu_main')]
+    [primaryButton('📞 Contact Owner', 'contact_owner')],
+    [primaryButton('🏠 Home', 'menu_main')]
   ]);
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
@@ -1700,8 +1797,8 @@ bot.action('contact_owner', async (ctx) => {
   const text = `📞 <b>Contact Owner</b>\n━━━━━━━━━━━━━━━━━━━━\nFor buying credits, support, or any issues:\n\n👤 <b>Owner:</b> @RTFGAMMING\n\n📌 <b>Message Format:</b>\n1. Your User ID: <code>${ctx.from.id}</code>\n2. Package you want\n3. Payment screenshot\n\n━━━━━━━━━━━━━━━━━━━━\n🕒 <code>${getIndianTime()}</code>`;
 
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.url('📩 Message Owner', 'https://t.me/RTFGAMMING')],
-    [Markup.button.callback('🔙 Back', 'menu_buy_credits')]
+    [urlButton('📩 Message Owner', 'https://t.me/RTFGAMMING')],
+    [primaryButton('🔙 Back', 'menu_buy_credits')]
   ]);
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
@@ -1716,25 +1813,25 @@ bot.action('menu_owner', async (ctx) => {
 
   const text = `👑 <b>OWNER CONTROL PANEL</b>\n━━━━━━━━━━━━━━━━━━━━\nKya karna hai select karo:\n\n📌 <b>Developer:</b> @RTFGAMMING`;
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('👥 Users List & Manage', 'owner_users_1')],
-    [Markup.button.callback('💰 Add Credits', 'owner_add_credits')],
-    [Markup.button.callback('💰 Remove Credits', 'owner_remove_credits')],
-    [Markup.button.callback('🔴 Ban User', 'owner_ban_user')],
-    [Markup.button.callback('🟢 Unban User', 'owner_unban_user')],
-    [Markup.button.callback('📊 Bot Stats', 'owner_stats')],
-    [Markup.button.callback('📤 Export User Data', 'owner_export_data')],
-    [Markup.button.callback('📱 Manage QR Code', 'owner_manage_qr')],
-    [Markup.button.callback('📢 Broadcast Message', 'owner_broadcast')],
-    [Markup.button.callback('📢 Manage Channels', 'owner_manage_channels')],
-    [Markup.button.callback('📢 OTP Forwarder', 'owner_otp_forwarder')],
-    [Markup.button.callback('🏠 Home', 'menu_main')]
+    [primaryButton('👥 Users List & Manage', 'owner_users_1')],
+    [successButton('💰 Add Credits', 'owner_add_credits')],
+    [dangerButton('💰 Remove Credits', 'owner_remove_credits')],
+    [dangerButton('🔴 Ban User', 'owner_ban_user')],
+    [successButton('🟢 Unban User', 'owner_unban_user')],
+    [primaryButton('📊 Bot Stats', 'owner_stats')],
+    [primaryButton('📤 Export User Data', 'owner_export_data')],
+    [primaryButton('📱 Manage QR Code', 'owner_manage_qr')],
+    [primaryButton('📢 Broadcast Message', 'owner_broadcast')],
+    [primaryButton('📢 Manage Channels', 'owner_manage_channels')],
+    [primaryButton('📢 OTP Forwarder', 'owner_otp_forwarder')],
+    [dangerButton('🏠 Home', 'menu_main')]
   ]);
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
 // ============================================
-// OWNER: Manage Channels
+// OWNER: Manage Channels (With Cross Button)
 // ============================================
 bot.action('owner_manage_channels', async (ctx) => {
   if (ctx.from.id !== OWNER_ID) return;
@@ -1742,19 +1839,73 @@ bot.action('owner_manage_channels', async (ctx) => {
 
   let text = `📢 <b>MANAGE CHANNELS</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Current Required Channels:</b>\n`;
   
-  REQUIRED_CHANNELS.forEach((channel, index) => {
-    text += `${index + 1}. ${channel.id}\n`;
-  });
+  if (REQUIRED_CHANNELS.length === 0) {
+    text += `❌ <i>No channels configured</i>\n`;
+  } else {
+    REQUIRED_CHANNELS.forEach((channel, index) => {
+      text += `${index + 1}. ${channel.id}\n`;
+    });
+  }
   
   text += `\n📌 <b>Options:</b>`;
 
-  const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('➕ Add Channel', 'owner_add_channel')],
-    [Markup.button.callback('➖ Remove Channel', 'owner_remove_channel')],
-    [Markup.button.callback('🔙 Back to Owner Panel', 'menu_owner')]
-  ]);
+  const buttons = [];
+  
+  // Add Remove buttons with ❌ for each channel
+  REQUIRED_CHANNELS.forEach((channel) => {
+    buttons.push([
+      dangerButton(`❌ Remove ${channel.id}`, `remove_channel_${channel.id}`)
+    ]);
+  });
+  
+  buttons.push([successButton('➕ Add Channel', 'owner_add_channel')]);
+  buttons.push([primaryButton('🔙 Back to Owner Panel', 'menu_owner')]);
 
-  return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+  return ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(() => {});
+});
+
+// ============================================
+// OWNER: Remove Channel (Direct Cross Button)
+// ============================================
+bot.action(/^remove_channel_(.+)$/, async (ctx) => {
+  if (ctx.from.id !== OWNER_ID) return;
+  
+  const channelId = ctx.match[1];
+  
+  // Remove from REQUIRED_CHANNELS
+  const index = REQUIRED_CHANNELS.findIndex(c => c.id === channelId);
+  if (index !== -1) {
+    REQUIRED_CHANNELS.splice(index, 1);
+  }
+  
+  await ChannelSettings.deleteOne({ id: channelId });
+  await safeAnswerCb(ctx, `✅ Channel @${channelId} removed!`);
+  
+  // Refresh manage channels view
+  let text = `📢 <b>MANAGE CHANNELS</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Current Required Channels:</b>\n`;
+  
+  if (REQUIRED_CHANNELS.length === 0) {
+    text += `❌ <i>No channels configured</i>\n`;
+  } else {
+    REQUIRED_CHANNELS.forEach((channel, index) => {
+      text += `${index + 1}. ${channel.id}\n`;
+    });
+  }
+  
+  text += `\n📌 <b>Options:</b>`;
+
+  const buttons = [];
+  
+  REQUIRED_CHANNELS.forEach((channel) => {
+    buttons.push([
+      dangerButton(`❌ Remove ${channel.id}`, `remove_channel_${channel.id}`)
+    ]);
+  });
+  
+  buttons.push([successButton('➕ Add Channel', 'owner_add_channel')]);
+  buttons.push([primaryButton('🔙 Back to Owner Panel', 'menu_owner')]);
+
+  return ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(() => {});
 });
 
 // ============================================
@@ -1772,32 +1923,7 @@ bot.action('owner_add_channel', async (ctx) => {
 
   const text = `➕ <b>ADD CHANNEL</b>\n━━━━━━━━━━━━━━━━━━━━\nSend the channel URL or username:\n\n📌 <b>Examples:</b>\n<code>https://t.me/RTFGAMINGHACK0</code>\n<code>@RTFGAMINGHACK0</code>\n\n<i>Users will need to join this channel to use the bot.</i>`;
 
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Cancel', 'owner_manage_channels')]]);
-  return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
-});
-
-// ============================================
-// OWNER: Remove Channel
-// ============================================
-bot.action('owner_remove_channel', async (ctx) => {
-  if (ctx.from.id !== OWNER_ID) return;
-  await safeAnswerCb(ctx);
-  
-  await Session.findOneAndUpdate(
-    { userId: ctx.from.id },
-    { userId: ctx.from.id, state: 'WAITING_REMOVE_CHANNEL', data: '' },
-    { upsert: true }
-  );
-
-  let text = `➖ <b>REMOVE CHANNEL</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Current Channels:</b>\n`;
-  
-  REQUIRED_CHANNELS.forEach((channel, index) => {
-    text += `${index + 1}. ${channel.id}\n`;
-  });
-  
-  text += `\nSend the channel username to remove (without @):\n\n📌 <b>Example:</b>\n<code>RTFGAMINGHACK0</code>`;
-
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Cancel', 'owner_manage_channels')]]);
+  const keyboard = Markup.inlineKeyboard([[primaryButton('🔙 Cancel', 'owner_manage_channels')]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
@@ -1810,7 +1936,7 @@ bot.action('owner_otp_forwarder', async (ctx) => {
 
   const forwarders = await OtpForwarder.find({ isActive: 1 });
   
-  let text = `📢 <b>OTP FORWARDER</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Active Forwarders:</b>\n`;
+  let text = `📢 <b>OTP FORWARDER</b>\n━━━━━━━━━━━━━━━━━━━━\n<i>Only WhatsApp OTPs will be forwarded</i>\n\n<b>Active Forwarders:</b>\n`;
   
   if (forwarders.length === 0) {
     text += `❌ <i>No active forwarders</i>\n`;
@@ -1818,16 +1944,18 @@ bot.action('owner_otp_forwarder', async (ctx) => {
     forwarders.forEach((f, index) => {
       text += `${index + 1}. ${f.chatId} (${f.chatType})\n`;
       text += `   🤖 Bot: ${f.botLink || 'Not set'}\n`;
+      text += `   📢 Channel: ${f.channelLink || 'Not set'}\n`;
     });
   }
   
   text += `\n📌 <b>Options:</b>`;
 
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('➕ Add Forwarder', 'owner_add_forwarder')],
-    [Markup.button.callback('🤖 Set Bot Link', 'owner_set_forwarder_bot')],
-    [Markup.button.callback('🔴 Remove Forwarder', 'owner_remove_forwarder')],
-    [Markup.button.callback('🔙 Back to Owner Panel', 'menu_owner')]
+    [successButton('➕ Add Forwarder', 'owner_add_forwarder')],
+    [primaryButton('🤖 Set Bot Link', 'owner_set_forwarder_bot')],
+    [primaryButton('📢 Set Channel Link', 'owner_set_forwarder_channel')],
+    [dangerButton('🔴 Remove Forwarder', 'owner_remove_forwarder')],
+    [primaryButton('🔙 Back to Owner Panel', 'menu_owner')]
   ]);
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
@@ -1846,9 +1974,9 @@ bot.action('owner_add_forwarder', async (ctx) => {
     { upsert: true }
   );
 
-  const text = `➕ <b>ADD OTP FORWARDER</b>\n━━━━━━━━━━━━━━━━━━━━\nSend the Channel/Group ID:\n\n📌 <b>How to get ID:</b>\n1. Add bot as admin to channel/group\n2. Send /id command\n3. Copy the ID\n\n<i>All OTPs will be forwarded to this chat.</i>`;
+  const text = `➕ <b>ADD OTP FORWARDER</b>\n━━━━━━━━━━━━━━━━━━━━\nSend the Channel/Group ID:\n\n📌 <b>How to get ID:</b>\n1. Add bot as admin to channel/group\n2. Send /id command\n3. Copy the ID\n\n<i>All WhatsApp OTPs will be forwarded to this chat.</i>`;
 
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Cancel', 'owner_otp_forwarder')]]);
+  const keyboard = Markup.inlineKeyboard([[primaryButton('🔙 Cancel', 'owner_otp_forwarder')]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
@@ -1864,16 +1992,16 @@ bot.action('owner_set_forwarder_bot', async (ctx) => {
   if (forwarders.length === 0) {
     return ctx.editMessageText(`❌ <b>No Forwarders Found!</b>\n━━━━━━━━━━━━━━━━━━━━\nPlease add a forwarder first.`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'owner_otp_forwarder')]])
+      ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_otp_forwarder')]])
     });
   }
 
   const buttons = forwarders.map(f => [
-    Markup.button.callback(`🤖 ${f.chatId}`, `owner_set_bot_link_${f.id}`)
+    primaryButton(`🤖 ${f.chatId}`, `owner_set_bot_link_${f.id}`)
   ]);
-  buttons.push([Markup.button.callback('🔙 Cancel', 'owner_otp_forwarder')]);
+  buttons.push([primaryButton('🔙 Cancel', 'owner_otp_forwarder')]);
 
-  const text = `🤖 <b>SET BOT LINK</b>\n━━━━━━━━━━━━━━━━━━━━\nSelect the forwarder to set bot link for:\n\n<i>This link will be attached to every OTP message.</i>`;
+  const text = `🤖 <b>SET BOT LINK</b>\n━━━━━━━━━━━━━━━━━━━━\nSelect the forwarder to set bot link for:\n\n<i>This link will be attached to every WhatsApp OTP message.</i>`;
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(() => {});
 });
@@ -1893,9 +2021,56 @@ bot.action(/^owner_set_bot_link_(.+)$/, async (ctx) => {
     { upsert: true }
   );
 
-  const text = `🤖 <b>SET BOT LINK</b>\n━━━━━━━━━━━━━━━━━━━━\nSend the bot link to attach:\n\n📌 <b>Example:</b>\n<code>https://t.me/RTFOTPBOT</code>\n\n<i>This link will be attached to every OTP message.</i>`;
+  const text = `🤖 <b>SET BOT LINK</b>\n━━━━━━━━━━━━━━━━━━━━\nSend the bot link to attach:\n\n📌 <b>Example:</b>\n<code>https://t.me/RTFOTPBOT</code>\n\n<i>This link will be attached to every WhatsApp OTP message.</i>`;
 
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Cancel', 'owner_otp_forwarder')]]);
+  const keyboard = Markup.inlineKeyboard([[primaryButton('🔙 Cancel', 'owner_otp_forwarder')]]);
+  return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+});
+
+// ============================================
+// OWNER: Set Channel Link for Forwarder
+// ============================================
+bot.action('owner_set_forwarder_channel', async (ctx) => {
+  if (ctx.from.id !== OWNER_ID) return;
+  await safeAnswerCb(ctx);
+
+  const forwarders = await OtpForwarder.find({ isActive: 1 });
+  
+  if (forwarders.length === 0) {
+    return ctx.editMessageText(`❌ <b>No Forwarders Found!</b>\n━━━━━━━━━━━━━━━━━━━━\nPlease add a forwarder first.`, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_otp_forwarder')]])
+    });
+  }
+
+  const buttons = forwarders.map(f => [
+    primaryButton(`📢 ${f.chatId}`, `owner_set_channel_link_${f.id}`)
+  ]);
+  buttons.push([primaryButton('🔙 Cancel', 'owner_otp_forwarder')]);
+
+  const text = `📢 <b>SET CHANNEL LINK</b>\n━━━━━━━━━━━━━━━━━━━━\nSelect the forwarder to set channel link for:\n\n<i>This link will be attached to every WhatsApp OTP message.</i>`;
+
+  return ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(() => {});
+});
+
+// ============================================
+// OWNER: Set Channel Link for Forwarder
+// ============================================
+bot.action(/^owner_set_channel_link_(.+)$/, async (ctx) => {
+  if (ctx.from.id !== OWNER_ID) return;
+  await safeAnswerCb(ctx);
+  
+  const forwarderId = ctx.match[1];
+  
+  await Session.findOneAndUpdate(
+    { userId: ctx.from.id },
+    { userId: ctx.from.id, state: 'WAITING_FORWARDER_CHANNEL_LINK', data: forwarderId },
+    { upsert: true }
+  );
+
+  const text = `📢 <b>SET CHANNEL LINK</b>\n━━━━━━━━━━━━━━━━━━━━\nSend the channel link to attach:\n\n📌 <b>Example:</b>\n<code>https://t.me/RTFGAMINGHACK0</code>\n\n<i>This link will be attached to every WhatsApp OTP message.</i>`;
+
+  const keyboard = Markup.inlineKeyboard([[primaryButton('🔙 Cancel', 'owner_otp_forwarder')]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
@@ -1911,14 +2086,14 @@ bot.action('owner_remove_forwarder', async (ctx) => {
   if (forwarders.length === 0) {
     return ctx.editMessageText(`❌ <b>No Forwarders Found!</b>\n━━━━━━━━━━━━━━━━━━━━\nNo forwarders to remove.`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'owner_otp_forwarder')]])
+      ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_otp_forwarder')]])
     });
   }
 
   const buttons = forwarders.map(f => [
-    Markup.button.callback(`🔴 ${f.chatId}`, `owner_remove_forwarder_${f.id}`)
+    dangerButton(`🔴 ${f.chatId}`, `owner_remove_forwarder_${f.id}`)
   ]);
-  buttons.push([Markup.button.callback('🔙 Cancel', 'owner_otp_forwarder')]);
+  buttons.push([primaryButton('🔙 Cancel', 'owner_otp_forwarder')]);
 
   const text = `🔴 <b>REMOVE FORWARDER</b>\n━━━━━━━━━━━━━━━━━━━━\nSelect the forwarder to remove:`;
 
@@ -1937,7 +2112,7 @@ bot.action(/^owner_remove_forwarder_(.+)$/, async (ctx) => {
   
   const text = `✅ <b>Forwarder Removed!</b>\n━━━━━━━━━━━━━━━━━━━━\nForwarder has been removed successfully.`;
 
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'owner_otp_forwarder')]]);
+  const keyboard = Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_otp_forwarder')]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
@@ -1961,15 +2136,15 @@ bot.action(/^owner_users_(\d+)$/, async (ctx) => {
     const status = u.isSuspended ? '🔴 Suspended' : '🟢 Active';
     text += `👤 <b>${u.firstName}</b> (<code>${u.userId}</code>)\n├ Status: ${status}\n├ Credits: ${u.credits}\n├ Referrals: ${u.referrals}\n└ Created: ${getIndianTime(u.createdAt)}\n\n`;
 
-    buttons.push([Markup.button.callback(`⚙️ Manage: ${u.firstName}`, `owner_manage_${u.userId}`)]);
+    buttons.push([primaryButton(`⚙️ Manage: ${u.firstName}`, `owner_manage_${u.userId}`)]);
   });
 
   const navRow = [];
-  if (page > 1) navRow.push(Markup.button.callback('◀️ Prev', `owner_users_${page - 1}`));
-  if (page < totalPages) navRow.push(Markup.button.callback('Next ▶️', `owner_users_${page + 1}`));
+  if (page > 1) navRow.push(primaryButton('◀️ Prev', `owner_users_${page - 1}`));
+  if (page < totalPages) navRow.push(primaryButton('Next ▶️', `owner_users_${page + 1}`));
   if (navRow.length > 0) buttons.push(navRow);
 
-  buttons.push([Markup.button.callback('🔙 Back to Owner Panel', 'menu_owner')]);
+  buttons.push([primaryButton('🔙 Back to Owner Panel', 'menu_owner')]);
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(() => {});
 });
@@ -1990,14 +2165,14 @@ bot.action(/^owner_manage_(\d+)$/, async (ctx) => {
 
   const keyboard = Markup.inlineKeyboard([
     [
-      Markup.button.callback(targetUser.isSuspended ? '🟢 Activate' : '🔴 Suspend', `owner_toggle_suspend_${targetUserId}`),
-      Markup.button.callback('➕ Add Credits', `owner_add_credits_user_${targetUserId}`)
+      targetUser.isSuspended ? successButton('🟢 Activate', `owner_toggle_suspend_${targetUserId}`) : dangerButton('🔴 Suspend', `owner_toggle_suspend_${targetUserId}`),
+      successButton('➕ Add Credits', `owner_add_credits_user_${targetUserId}`)
     ],
     [
-      Markup.button.callback('➖ Remove Credits', `owner_remove_credits_user_${targetUserId}`),
-      Markup.button.callback('⏳ Unlimited 24hrs', `owner_unlimited_${targetUserId}`)
+      dangerButton('➖ Remove Credits', `owner_remove_credits_user_${targetUserId}`),
+      successButton('⏳ Unlimited 24hrs', `owner_unlimited_${targetUserId}`)
     ],
-    [Markup.button.callback('🔙 Back to Users', 'owner_users_1')]
+    [primaryButton('🔙 Back to Users', 'owner_users_1')]
   ]);
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
@@ -2025,7 +2200,7 @@ bot.action(/^owner_toggle_suspend_(\d+)$/, async (ctx) => {
     ctx.callbackQuery.message.message_id,
     null,
     `✅ ID <code>${targetUserId}</code> ka status update ho gaya.`,
-    { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', `owner_manage_${targetUserId}`)]]) }
+    { parse_mode: 'HTML', ...Markup.inlineKeyboard([[primaryButton('🔙 Back', `owner_manage_${targetUserId}`)]]) }
   );
 });
 
@@ -2044,7 +2219,7 @@ bot.action('owner_add_credits', async (ctx) => {
 
   const text = `💰 <b>ADD CREDITS</b>\n━━━━━━━━━━━━━━━━━━━━\nSend message in format:\n<code>user_id amount</code>\n\nExample:\n<code>123456789 5</code> - Adds 5 credits to user`;
 
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Cancel', 'menu_owner')]]);
+  const keyboard = Markup.inlineKeyboard([[dangerButton('🔙 Cancel', 'menu_owner')]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
@@ -2063,7 +2238,7 @@ bot.action('owner_remove_credits', async (ctx) => {
 
   const text = `💰 <b>REMOVE CREDITS</b>\n━━━━━━━━━━━━━━━━━━━━\nSend message in format:\n<code>user_id amount</code>\n\nExample:\n<code>123456789 5</code> - Removes 5 credits from user`;
 
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Cancel', 'menu_owner')]]);
+  const keyboard = Markup.inlineKeyboard([[dangerButton('🔙 Cancel', 'menu_owner')]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
@@ -2083,7 +2258,7 @@ bot.action(/^owner_add_credits_user_(\d+)$/, async (ctx) => {
 
   const text = `💰 <b>ADD CREDITS FOR USER</b>\n━━━━━━━━━━━━━━━━━━━━\nUser ID: <code>${targetUserId}</code>\n\nSend the amount of credits to add:`;
 
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Cancel', `owner_manage_${targetUserId}`)]]);
+  const keyboard = Markup.inlineKeyboard([[dangerButton('🔙 Cancel', `owner_manage_${targetUserId}`)]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
@@ -2103,7 +2278,7 @@ bot.action(/^owner_remove_credits_user_(\d+)$/, async (ctx) => {
 
   const text = `💰 <b>REMOVE CREDITS FOR USER</b>\n━━━━━━━━━━━━━━━━━━━━\nUser ID: <code>${targetUserId}</code>\n\nSend the amount of credits to remove:`;
 
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Cancel', `owner_manage_${targetUserId}`)]]);
+  const keyboard = Markup.inlineKeyboard([[dangerButton('🔙 Cancel', `owner_manage_${targetUserId}`)]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
@@ -2132,7 +2307,7 @@ bot.action(/^owner_unlimited_(\d+)$/, async (ctx) => {
     ctx.callbackQuery.message.message_id,
     null,
     `✅ User <code>${targetUserId}</code> ko 24 hours unlimited access mil gaya!`,
-    { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', `owner_manage_${targetUserId}`)]]) }
+    { parse_mode: 'HTML', ...Markup.inlineKeyboard([[primaryButton('🔙 Back', `owner_manage_${targetUserId}`)]]) }
   );
 });
 
@@ -2151,7 +2326,7 @@ bot.action('owner_ban_user', async (ctx) => {
 
   const text = `🔴 <b>BAN USER</b>\n━━━━━━━━━━━━━━━━━━━━\nSend the User ID to ban:\n\nExample: <code>123456789</code>`;
 
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Cancel', 'menu_owner')]]);
+  const keyboard = Markup.inlineKeyboard([[dangerButton('🔙 Cancel', 'menu_owner')]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
@@ -2170,7 +2345,7 @@ bot.action('owner_unban_user', async (ctx) => {
 
   const text = `🟢 <b>UNBAN USER</b>\n━━━━━━━━━━━━━━━━━━━━\nSend the User ID to unban:\n\nExample: <code>123456789</code>`;
 
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Cancel', 'menu_owner')]]);
+  const keyboard = Markup.inlineKeyboard([[dangerButton('🔙 Cancel', 'menu_owner')]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
@@ -2192,12 +2367,12 @@ bot.action('owner_stats', async (ctx) => {
 
   const text = `📊 <b>BOT STATISTICS</b>\n━━━━━━━━━━━━━━━━━━━━\n👥 <b>Total Users:</b> <code>${totalUsers}</code>\n🟢 <b>Active Users:</b> <code>${totalActiveUsers}</code>\n🔴 <b>Banned Users:</b> <code>${totalBannedUsers}</code>\n📱 <b>Active Numbers:</b> <code>${totalActiveNumbers}</code>\n📬 <b>Total OTPs in DB:</b> <code>${totalOtps} / ${MAX_SAVED_OTPS}</code>\n💰 <b>Total Credits:</b> <code>${totalCredits[0]?.total || 0}</code>\n📈 <b>Traffic Countries:</b> <code>${trafficStats}</code>\n🌟 <b>Total Referrals:</b> <code>${totalReferrals[0]?.total || 0}</code>\n\n🕒 <b>Updated:</b> <code>${getIndianTime()}</code>`;
 
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'menu_owner')]]);
+  const keyboard = Markup.inlineKeyboard([[primaryButton('🔙 Back', 'menu_owner')]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
 // ============================================
-// OWNER: Export User Data (FIXED)
+// OWNER: Export User Data
 // ============================================
 bot.action('owner_export_data', async (ctx) => {
   if (ctx.from.id !== OWNER_ID) return;
@@ -2209,7 +2384,7 @@ bot.action('owner_export_data', async (ctx) => {
     if (users.length === 0) {
       return ctx.editMessageText(`📤 <b>NO USERS FOUND</b>\n━━━━━━━━━━━━━━━━━━━━\nKoi user register nahi kiya abhi tak.`, {
         parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'menu_owner')]])
+        ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'menu_owner')]])
       });
     }
     
@@ -2219,13 +2394,13 @@ bot.action('owner_export_data', async (ctx) => {
     });
     text += `\n━━━━━━━━━━━━━━━━━━━━\n📌 <b>Total Users:</b> ${users.length}`;
 
-    const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'menu_owner')]]);
+    const keyboard = Markup.inlineKeyboard([[primaryButton('🔙 Back', 'menu_owner')]]);
     return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
   } catch (error) {
     console.error('Export error:', error);
     return ctx.editMessageText(`❌ <b>Error Exporting Data</b>\n━━━━━━━━━━━━━━━━━━━━\n${error.message}`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'menu_owner')]])
+      ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'menu_owner')]])
     });
   }
 });
@@ -2243,10 +2418,10 @@ bot.action('owner_manage_qr', async (ctx) => {
   const text = `📱 <b>MANAGE QR CODE</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>QR Code Status:</b> ${qrStatus}\n${qrCode ? `\n📝 <b>Current Description:</b>\n${qrCode.description || 'No description'}` : ''}\n\n📌 <b>Options:</b>`;
 
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('📤 Add/Update QR Code', 'owner_add_qr')],
-    [Markup.button.callback('📝 Update Description', 'owner_update_qr_desc')],
-    [Markup.button.callback('🗑️ Remove QR Code', 'owner_remove_qr')],
-    [Markup.button.callback('🔙 Back to Owner Panel', 'menu_owner')]
+    [primaryButton('📤 Add/Update QR Code', 'owner_add_qr')],
+    [primaryButton('📝 Update Description', 'owner_update_qr_desc')],
+    [dangerButton('🗑️ Remove QR Code', 'owner_remove_qr')],
+    [primaryButton('🔙 Back to Owner Panel', 'menu_owner')]
   ]);
 
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
@@ -2267,7 +2442,7 @@ bot.action('owner_add_qr', async (ctx) => {
 
   const text = `📤 <b>ADD/UPDATE QR CODE</b>\n━━━━━━━━━━━━━━━━━━━━\nSend the QR code image URL or image file:\n\n📌 <b>Example:</b>\n<code>https://example.com/qr.png</code>\n\nOr send the image file directly.`;
 
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Cancel', 'owner_manage_qr')]]);
+  const keyboard = Markup.inlineKeyboard([[dangerButton('🔙 Cancel', 'owner_manage_qr')]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
@@ -2286,7 +2461,7 @@ bot.action('owner_update_qr_desc', async (ctx) => {
 
   const text = `📝 <b>UPDATE QR DESCRIPTION</b>\n━━━━━━━━━━━━━━━━━━━━\nSend the new description for the QR code:\n\n📌 <b>Example:</b>\n<code>Pay ₹20 for 10 credits or ₹50 for unlimited</code>`;
 
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Cancel', 'owner_manage_qr')]]);
+  const keyboard = Markup.inlineKeyboard([[dangerButton('🔙 Cancel', 'owner_manage_qr')]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
@@ -2301,7 +2476,7 @@ bot.action('owner_remove_qr', async (ctx) => {
   
   const text = `✅ <b>QR Code Removed Successfully!</b>\n━━━━━━━━━━━━━━━━━━━━\nQR code has been removed from the system.`;
 
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Back', 'owner_manage_qr')]]);
+  const keyboard = Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_manage_qr')]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
@@ -2320,7 +2495,7 @@ bot.action('owner_broadcast', async (ctx) => {
 
   const text = `📢 <b>BROADCAST MESSAGE</b>\n━━━━━━━━━━━━━━━━━━━━\nSend the message you want to broadcast to all users:\n\n📌 <b>Tips:</b>\n- Use HTML formatting\n- Keep it short and clear\n- Will be sent to all users`;
 
-  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔙 Cancel', 'menu_owner')]]);
+  const keyboard = Markup.inlineKeyboard([[dangerButton('🔙 Cancel', 'menu_owner')]]);
   return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
 });
 
@@ -2348,7 +2523,7 @@ bot.on('text', async (ctx, next) => {
 
     return ctx.reply(`✅ <b>Credits Added!</b>\n━━━━━━━━━━━━━━━━━━━━\nUser ID: <code>${targetUserId}</code>\nAmount: <b>${amount}</b> credits\n\nNew balance updated.`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+      ...Markup.inlineKeyboard([[dangerButton('👑 Owner Panel', 'menu_owner')]])
     });
   }
 
@@ -2369,7 +2544,7 @@ bot.on('text', async (ctx, next) => {
 
     return ctx.reply(`✅ <b>Credits Removed!</b>\n━━━━━━━━━━━━━━━━━━━━\nUser ID: <code>${targetUserId}</code>\nAmount: <b>${amount}</b> credits\n\nNew balance updated.`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+      ...Markup.inlineKeyboard([[dangerButton('👑 Owner Panel', 'menu_owner')]])
     });
   }
 
@@ -2387,7 +2562,7 @@ bot.on('text', async (ctx, next) => {
 
     return ctx.reply(`🔴 <b>User Banned!</b>\n━━━━━━━━━━━━━━━━━━━━\nUser ID: <code>${targetUserId}</code>\n\nUser has been suspended.`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+      ...Markup.inlineKeyboard([[dangerButton('👑 Owner Panel', 'menu_owner')]])
     });
   }
 
@@ -2405,7 +2580,7 @@ bot.on('text', async (ctx, next) => {
 
     return ctx.reply(`🟢 <b>User Unbanned!</b>\n━━━━━━━━━━━━━━━━━━━━\nUser ID: <code>${targetUserId}</code>\n\nUser is now active.`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+      ...Markup.inlineKeyboard([[dangerButton('👑 Owner Panel', 'menu_owner')]])
     });
   }
 
@@ -2413,6 +2588,15 @@ bot.on('text', async (ctx, next) => {
   if (session.state === 'WAITING_ADD_CHANNEL') {
     let channelInput = ctx.message.text.trim();
     let channelId = channelInput.replace('https://t.me/', '').replace('@', '');
+    
+    const exists = REQUIRED_CHANNELS.find(c => c.id === channelId);
+    if (exists) {
+      await Session.deleteOne({ userId: ctx.from.id });
+      return ctx.reply(`⚠️ <b>Channel Already Exists!</b>\n━━━━━━━━━━━━━━━━━━━━\nChannel @${channelId} already exists in the list.`, {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_manage_channels')]])
+      });
+    }
     
     await ChannelSettings.findOneAndUpdate(
       { id: channelId },
@@ -2425,43 +2609,29 @@ bot.on('text', async (ctx, next) => {
     );
     await Session.deleteOne({ userId: ctx.from.id });
     
-    // Update REQUIRED_CHANNELS
-    const existing = REQUIRED_CHANNELS.find(c => c.id === channelId);
-    if (!existing) {
-      REQUIRED_CHANNELS.push({
-        id: channelId,
-        url: `https://t.me/${channelId}`
-      });
-    }
+    REQUIRED_CHANNELS.push({
+      id: channelId,
+      url: `https://t.me/${channelId}`
+    });
     
     return ctx.reply(`✅ <b>Channel Added Successfully!</b>\n━━━━━━━━━━━━━━━━━━━━\nChannel: @${channelId}\n\nNow users will need to join this channel too.`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
-    });
-  }
-
-  // Channel Management - Remove Channel
-  if (session.state === 'WAITING_REMOVE_CHANNEL') {
-    const channelId = ctx.message.text.trim().replace('@', '');
-    
-    await ChannelSettings.deleteOne({ id: channelId });
-    await Session.deleteOne({ userId: ctx.from.id });
-    
-    // Remove from REQUIRED_CHANNELS
-    const index = REQUIRED_CHANNELS.findIndex(c => c.id === channelId);
-    if (index !== -1) {
-      REQUIRED_CHANNELS.splice(index, 1);
-    }
-    
-    return ctx.reply(`✅ <b>Channel Removed Successfully!</b>\n━━━━━━━━━━━━━━━━━━━━\nChannel: @${channelId}\n\nUsers no longer need to join this channel.`, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+      ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_manage_channels')]])
     });
   }
 
   // OTP Forwarder - Add
   if (session.state === 'WAITING_ADD_FORWARDER') {
     const chatId = ctx.message.text.trim();
+    
+    const exists = await OtpForwarder.findOne({ id: chatId });
+    if (exists) {
+      await Session.deleteOne({ userId: ctx.from.id });
+      return ctx.reply(`⚠️ <b>Forwarder Already Exists!</b>\n━━━━━━━━━━━━━━━━━━━━\nThis forwarder is already added.`, {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_otp_forwarder')]])
+      });
+    }
     
     await OtpForwarder.findOneAndUpdate(
       { id: chatId },
@@ -2475,9 +2645,9 @@ bot.on('text', async (ctx, next) => {
     );
     await Session.deleteOne({ userId: ctx.from.id });
     
-    return ctx.reply(`✅ <b>OTP Forwarder Added!</b>\n━━━━━━━━━━━━━━━━━━━━\nChat ID: ${chatId}\n\nAll OTPs will be forwarded here.`, {
+    return ctx.reply(`✅ <b>OTP Forwarder Added!</b>\n━━━━━━━━━━━━━━━━━━━━\nChat ID: ${chatId}\n\nAll WhatsApp OTPs will be forwarded here.`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+      ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_otp_forwarder')]])
     });
   }
 
@@ -2494,7 +2664,24 @@ bot.on('text', async (ctx, next) => {
     
     return ctx.reply(`✅ <b>Bot Link Updated!</b>\n━━━━━━━━━━━━━━━━━━━━\nBot Link: ${botLink}`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('👑 Owner Panel', 'menu_owner')]])
+      ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_otp_forwarder')]])
+    });
+  }
+
+  // OTP Forwarder - Channel Link
+  if (session.state === 'WAITING_FORWARDER_CHANNEL_LINK') {
+    const channelLink = ctx.message.text.trim();
+    const forwarderId = session.data;
+    
+    await OtpForwarder.findOneAndUpdate(
+      { id: forwarderId },
+      { channelLink: channelLink }
+    );
+    await Session.deleteOne({ userId: ctx.from.id });
+    
+    return ctx.reply(`✅ <b>Channel Link Updated!</b>\n━━━━━━━━━━━━━━━━━━━━\nChannel Link: ${channelLink}`, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[primaryButton('🔙 Back', 'owner_otp_forwarder')]])
     });
   }
 
